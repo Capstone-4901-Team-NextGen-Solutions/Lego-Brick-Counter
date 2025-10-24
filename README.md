@@ -1,16 +1,41 @@
-# lego_brick_counter_app
+-------------------------------------
+Lego Brick Counter/Sorter
+-------------------------------------
 
-A new Flutter project.
+Description: A system that identifies, classifies, and counts Lego bricks from images or camera
+input. It generates an inventory and matches against Lego set databases to suggest buildable sets
+or highlight missing pieces. Functions as an intelligent Lego inventory and recommendation
+assistant.
 
-## Getting Started
+-------------------------------------
+Motivation:
 
-This project is a starting point for a Flutter application.
+● Combines computer vision, machine learning, and database management.
 
-A few resources to get you started if this is your first Flutter project:
+● Challenges include recognizing bricks from images and mapping them to sets.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+● A fun and engaging technical problem with real-world use for Lego enthusiasts.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---------------------------------------------
+Platform:
+
+● Desktop or web-based app.
+
+● Python for CV/ML (OpenCV, CNNs).
+
+● Flask/Django or Node.js for UI.
+
+● Optional mobile integration for capturing images.
+
+------------------------------------
+Features:
+
+● Brick classification via CV/ML.
+
+● Automated counting.
+
+● Database comparison to suggest sets.
+
+● Intuitive UI for uploads, visualization, and recommendations.
+
+● Stretch goal: Real-time sorting with hardware integration.
