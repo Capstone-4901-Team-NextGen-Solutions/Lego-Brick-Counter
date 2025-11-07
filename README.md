@@ -19,7 +19,7 @@ Motivation:
 ---------------------------------------------
 Platform:
 
-● Desktop or web-based app.
+● Mobile app that is supported on IOS and Android platforms.
 
 ● Python for CV/ML (OpenCV, CNNs).
 
