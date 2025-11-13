@@ -94,7 +94,7 @@ class _ScanScreenState extends State<ScanScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Camera/Upload Section
+          //Camera/Upload Section
           Card(
             elevation: 4,
             child: Padding(
@@ -128,7 +128,7 @@ class _ScanScreenState extends State<ScanScreen> {
           
           const SizedBox(height: 16),
           
-          // Results Section
+          //Results Section
           Expanded(
             child: Card(
               elevation: 4,
@@ -198,17 +198,17 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   void _takePhoto() {
-    // TODO: Implement camera functionality
+    //TODO: Implement camera functionality
     _mockScanBricks();
   }
 
   void _uploadImage() {
-    // TODO: Implement image picker
+    //TODO: Implement image picker
     _mockScanBricks();
   }
 
   void _mockScanBricks() {
-    // Mock data for demonstration
+    //Mock data for demonstration
     setState(() {
       _scannedBricks = [
         LegoBrick(
@@ -260,7 +260,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          // Statistics
+          //Statistics
           Card(
             elevation: 4,
             child: Padding(
@@ -278,7 +278,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           
           const SizedBox(height: 16),
           
-          // Inventory List
+          //Inventory List
           Expanded(
             child: Card(
               elevation: 4,
@@ -351,7 +351,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _searchInventory() {
-    // TODO: Implement search functionality
+    //TODO: Implement search functionality
     showSearch(
       context: context,
       delegate: _BrickSearchDelegate(_inventory),
@@ -582,7 +582,7 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-// Data Models
+//Data Models
 class LegoBrick {
   final String id;
   final String name;
@@ -611,7 +611,7 @@ class LegoSet {
   });
 }
 
-// Search Delegate
+//Search Delegate
 class _BrickSearchDelegate extends SearchDelegate {
   final List<LegoBrick> bricks;
 
