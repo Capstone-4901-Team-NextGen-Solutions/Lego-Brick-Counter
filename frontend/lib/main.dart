@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'services/api_service.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+
 
 void main() {
   runApp(const LegoApp());
@@ -86,6 +90,7 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   List<LegoBrick> _scannedBricks = [];
+  bool _isProcessing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +99,7 @@ class _ScanScreenState extends State<ScanScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Camera/Upload Section
+          //Camera/Upload Section
           Card(
             elevation: 4,
             child: Padding(
@@ -106,21 +111,29 @@ class _ScanScreenState extends State<ScanScreen> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildActionButton(
-                        icon: Icons.camera_alt,
-                        label: 'Take Photo',
-                        onPressed: () => _takePhoto(),
-                      ),
-                      _buildActionButton(
-                        icon: Icons.photo_library,
-                        label: 'Upload Image',
-                        onPressed: () => _uploadImage(),
-                      ),
-                    ],
-                  ),
+                  _isProcessing
+                      ? const Column(
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('Processing image...'),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _buildActionButton(
+                              icon: Icons.camera_alt,
+                              label: 'Take Photo',
+                              onPressed: _takePhoto,
+                            ),
+                            _buildActionButton(
+                              icon: Icons.photo_library,
+                              label: 'Upload Image',
+                              onPressed: _uploadImage,
+                            ),
+                          ],
+                        ),
                 ],
               ),
             ),
@@ -128,7 +141,7 @@ class _ScanScreenState extends State<ScanScreen> {
           
           const SizedBox(height: 16),
           
-          // Results Section
+          //Results Section
           Expanded(
             child: Card(
               elevation: 4,
@@ -197,44 +210,95 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-  void _takePhoto() {
-    // TODO: Implement camera functionality
-    _mockScanBricks();
+  void _takePhoto() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 80,
+      );
+
+      if (image != null) {
+        await _processImage(File(image.path));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Camera error: $e')),
+      );
+    }
   }
 
-  void _uploadImage() {
-    // TODO: Implement image picker
-    _mockScanBricks();
+  void _uploadImage() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 80,
+      );
+
+      if (image != null) {
+        await _processImage(File(image.path));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gallery error: $e')),
+      );
+    }
   }
 
-  void _mockScanBricks() {
-    // Mock data for demonstration
+  Future<void> _processImage(File imageFile) async {
     setState(() {
-      _scannedBricks = [
-        LegoBrick(
-          id: '3001',
-          name: '2x4 Brick',
-          color: Colors.red,
-          quantity: 5,
-        ),
-        LegoBrick(
-          id: '3003',
-          name: '2x2 Brick',
-          color: Colors.blue,
-          quantity: 3,
-        ),
-        LegoBrick(
-          id: '3023',
-          name: '1x2 Plate',
-          color: Colors.yellow,
-          quantity: 8,
-        ),
-      ];
+      _isProcessing = true;
     });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Bricks scanned successfully!')),
-    );
+
+    try {
+      var result = await ApiService.uploadImage(imageFile);
+      
+      if (result['success'] == true) {
+        setState(() {
+          _scannedBricks = (result['results'] as List)
+              .map((brickData) => LegoBrick(
+                    id: brickData['id'],
+                    name: brickData['name'],
+                    color: _parseColor(brickData['color']),
+                    quantity: brickData['quantity'],
+                  ))
+              .toList();
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bricks scanned successfully!')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: ${result['error']}')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error processing image: $e')),
+      );
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  //Helper function to convert color string to Color
+  Color _parseColor(String colorName) {
+    switch (colorName.toLowerCase()) {
+      case 'red': return Colors.red;
+      case 'blue': return Colors.blue;
+      case 'yellow': return Colors.yellow;
+      case 'green': return Colors.green;
+      case 'black': return Colors.black;
+      default: return Colors.grey;
+    }
   }
 }
 
@@ -260,7 +324,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          // Statistics
+          //Statistics
           Card(
             elevation: 4,
             child: Padding(
@@ -278,7 +342,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           
           const SizedBox(height: 16),
           
-          // Inventory List
+          //Inventory List
           Expanded(
             child: Card(
               elevation: 4,
@@ -351,7 +415,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _searchInventory() {
-    // TODO: Implement search functionality
+    //TODO: Implement search functionality
     showSearch(
       context: context,
       delegate: _BrickSearchDelegate(_inventory),
@@ -582,7 +646,7 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-// Data Models
+//Data Models
 class LegoBrick {
   final String id;
   final String name;
@@ -611,7 +675,7 @@ class LegoSet {
   });
 }
 
-// Search Delegate
+//Search Delegate
 class _BrickSearchDelegate extends SearchDelegate {
   final List<LegoBrick> bricks;
 
