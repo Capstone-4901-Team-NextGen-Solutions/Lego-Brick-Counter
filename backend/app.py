@@ -8,6 +8,7 @@ from PIL import Image
 import os
 from datetime import datetime
 import logging
+from brick_detector import BrickDetector
 
 #Initializes Flask app
 app = Flask(__name__)
@@ -25,6 +26,19 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize ONNX detector once at startup
+try:
+    detector = BrickDetector(
+        model_path='best.onnx',
+        conf_threshold=0.25,
+        iou_threshold=0.45
+    )
+    logger.info("✅ Brick detector initialized successfully")
+except Exception as e:
+    logger.error(f"❌ Error initializing detector: {e}")
+    logger.warning("⚠️  API will run without detector - place best.onnx in backend/")
+    detector = None
+
 def allowed_file(filename):
     """Check if the file extension is allowed"""
     return '.' in filename and \
@@ -32,45 +46,19 @@ def allowed_file(filename):
 
 def process_image_for_bricks(image_path):
     """
-    Mock function for brick detection and classification
-    Replace this with your actual CV/ML model
+    Process image using ONNX YOLOv8 model for brick detection
     """
-    #TODO: Replace with actual OpenCV/ML processing
-    #This is a mock implementation
+    if detector is None:
+        logger.error("Detector not initialized - model file missing")
+        return []
     
-    #Simulates processing time
-    import time
-    time.sleep(1)
-    
-    #Mock detection results
-    mock_bricks = [
-        {
-            "id": "3001",
-            "name": "2x4 Brick",
-            "color": "Red",
-            "quantity": 3,
-            "confidence": 0.95,
-            "bbox": [100, 100, 200, 150]  # x, y, w, h
-        },
-        {
-            "id": "3003",
-            "name": "2x2 Brick",
-            "color": "Blue",
-            "quantity": 2,
-            "confidence": 0.92,
-            "bbox": [300, 200, 120, 120]
-        },
-        {
-            "id": "3023",
-            "name": "1x2 Plate",
-            "color": "Yellow",
-            "quantity": 5,
-            "confidence": 0.88,
-            "bbox": [150, 300, 80, 160]
-        }
-    ]
-    
-    return mock_bricks
+    try:
+        results = detector.detect_bricks(image_path)
+        logger.info(f"Detected {len(results)} bricks")
+        return results
+    except Exception as e:
+        logger.error(f"Detection error: {str(e)}")
+        return []
 
 @app.route('/')
 def home():
