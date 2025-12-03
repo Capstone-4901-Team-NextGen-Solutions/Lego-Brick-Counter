@@ -5,4 +5,4 @@ opencv-python==4.8.1.78
 numpy==1.21.6
 Pillow==9.5.0
 python-dotenv==0.21.1
-onnxruntime==1.14.1
+onnxruntime

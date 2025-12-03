@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 
 void main() {
@@ -211,83 +212,83 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   void _takePhoto() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 80,
-      );
+  try {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(  // XFile instead of File
+      source: ImageSource.camera,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 80,
+    );
 
-      if (image != null) {
-        await _processImage(File(image.path));
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Camera error: $e')),
-      );
+    if (image != null) {
+      await _processImage(image);  // Pass XFile directly, no File() wrapper
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Camera error: $e')),
+    );
   }
+}
 
-  void _uploadImage() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 80,
-      );
+void _uploadImage() async {
+  try {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(  // XFile instead of File
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 80,
+    );
 
-      if (image != null) {
-        await _processImage(File(image.path));
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gallery error: $e')),
-      );
+    if (image != null) {
+      await _processImage(image);  // Pass XFile directly, no File() wrapper
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Gallery error: $e')),
+    );
   }
+}
 
-  Future<void> _processImage(File imageFile) async {
-    setState(() {
-      _isProcessing = true;
-    });
+  Future<void> _processImage(XFile imageFile) async {  //Changes parameter type to XFile
+  setState(() {
+    _isProcessing = true;
+  });
 
-    try {
-      var result = await ApiService.uploadImage(imageFile);
-      
-      if (result['success'] == true) {
-        setState(() {
-          _scannedBricks = (result['results'] as List)
-              .map((brickData) => LegoBrick(
-                    id: brickData['id'],
-                    name: brickData['name'],
-                    color: _parseColor(brickData['color']),
-                    quantity: brickData['quantity'],
-                  ))
-              .toList();
-        });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bricks scanned successfully!')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: ${result['error']}')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error processing image: $e')),
-      );
-    } finally {
+  try {
+    var result = await ApiService.uploadImage(imageFile);  //Pass XFile directly
+    
+    if (result['success'] == true) {
       setState(() {
-        _isProcessing = false;
+        _scannedBricks = (result['results'] as List)
+            .map((brickData) => LegoBrick(
+                  id: brickData['id'],
+                  name: brickData['name'],
+                  color: _parseColor(brickData['color']),
+                  quantity: brickData['quantity'],
+                ))
+            .toList();
       });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bricks scanned successfully!')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: ${result['error']}')),
+      );
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error processing image: $e')),
+    );
+  } finally {
+    setState(() {
+      _isProcessing = false;
+    });
   }
+}
 
   //Helper function to convert color string to Color
   Color _parseColor(String colorName) {

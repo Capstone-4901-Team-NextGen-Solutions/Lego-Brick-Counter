@@ -289,6 +289,7 @@ class BrickDetector:
             return "Purple"
         
         return "Unknown"
+    
 
 
 # Usage example
