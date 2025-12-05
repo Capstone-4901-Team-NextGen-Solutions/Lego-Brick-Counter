@@ -1,5 +1,5 @@
 name: lego_brick_counter_app
-description: "Lego Brick Counter and Sorter App"
+description: "Lego Brick Counter and Sorter App - Multi-platform"
 
 publish_to: 'none'
 
@@ -13,23 +13,23 @@ dependencies:
     sdk: flutter
   http: ^1.1.0
   image_picker: ^1.0.4
+  image_picker_for_web: ^3.0.0  # Web-specific version
+  universal_io: ^2.2.2  # For platform-agnostic IO
+  universal_platform: ^1.0.0  # For platform detection
   cupertino_icons: ^1.0.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-  flutter_launcher_icons: "^0.13.1"  
+  flutter_launcher_icons: "^0.13.1"
 
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/app_icon.png"  #custom brick image
-  adaptive_icon_foreground: "assets/app_icon.png"
+  image_path: "assets/app_icon.png"
 
 flutter:
   uses-material-design: true
-  
-  #assets section:
   assets:
     - assets/app_icon.png
