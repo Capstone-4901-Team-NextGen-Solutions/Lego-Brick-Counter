@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 
 void main() {
@@ -517,122 +518,138 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   }
 
   void _takePhoto() async {
-    setState(() {
-      _errorMessage = null;
-    });
+  setState(() {
+    _errorMessage = null;
+  });
 
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 80,
-      );
+  try {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 80,
+    );
 
-      if (image != null) {
-        setState(() {
-          _selectedImage = File(image.path);
-        });
-        await _processImage(File(image.path));
-      }
-    } catch (e) {
+    if (image != null) {
       setState(() {
-        _errorMessage = 'Camera error: ${e.toString()}';
+        _selectedImage = File(image.path);
       });
+      await _processImage(image);  //Pass XFile directly
     }
+  } catch (e) {
+    setState(() {
+      _errorMessage = 'Camera error: ${e.toString()}';
+    });
   }
+}
 
   void _uploadImage() async {
-    setState(() {
-      _errorMessage = null;
-    });
+  setState(() {
+    _errorMessage = null;
+  });
 
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 80,
-      );
+  try {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 80,
+    );
 
-      if (image != null) {
-        setState(() {
-          _selectedImage = File(image.path);
-        });
-        await _processImage(File(image.path));
-      }
-    } catch (e) {
+    if (image != null) {
       setState(() {
-        _errorMessage = 'Gallery error: ${e.toString()}';
+        _selectedImage = File(image.path);
       });
+      await _processImage(image);  //Pass XFile directly
     }
+  } catch (e) {
+    setState(() {
+      _errorMessage = 'Gallery error: ${e.toString()}';
+    });
   }
+}
 
   void _retryUpload() {
     if (_lastFailedImage != null) {
       _processImage(_lastFailedImage!);
+void _uploadImage() async {
+  try {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(  //XFile instead of File
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 80,
+    );
+
+    if (image != null) {
+      await _processImage(image);  //Pass XFile directly, no File() wrapper
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Gallery error: $e')),
+    );
   }
-
-  Future<void> _processImage(File imageFile) async {
-    setState(() {
-      _isProcessing = true;
-      _errorMessage = null;
-      _lastFailedImage = imageFile;
-    });
-
-    try {
-      var result = await ApiService.uploadImage(imageFile);
-      
-      if (result['success'] == true) {
+}
+      Future<void> _processImage(XFile imageFile) async {  //Changed parameter to XFile
         setState(() {
-          _scannedBricks = (result['results'] as List)
-              .map((brickData) => LegoBrick(
-                    id: brickData['id'],
-                    name: brickData['name'],
-                    color: _parseColor(brickData['color']),
-                    quantity: brickData['quantity'],
-                    confidence: brickData['confidence']?.toDouble(),
-                  ))
-              .toList();
+          _isProcessing = true;
           _errorMessage = null;
-        });
-        
-        _animationController.forward(from: 0);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Found ${_scannedBricks.length} brick(s)!'),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        );
-      } else {
-        setState(() {
-          _errorMessage = result['error'] ?? 'Upload failed. Please try again.';
-        });
+          _lastFailedImage = imageFile;
+          });
+
+        try {
+          var result = await ApiService.uploadImage(imageFile);  //Pass XFile directly
+
+          if (result['success'] == true) {
+            setState(() {
+              _scannedBricks = (result['results'] as List)
+                  .map((brickData) => LegoBrick(
+                        id: brickData['id'],
+                        name: brickData['name'],
+                        color: _parseColor(brickData['color']),
+                        quantity: brickData['quantity'],
+                        confidence: brickData['confidence']?.toDouble(),
+                      ))
+                  .toList();
+              _errorMessage = null;
+            });
+
+            _animationController.forward(from: 0);
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.white),
+                    const SizedBox(width: 12),
+                    Text('Found ${_scannedBricks.length} brick(s)!'),
+                  ],
+                ),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            );
+          } else {
+            setState(() {
+              _errorMessage = result['error'] ?? 'Upload failed. Please try again.';
+            });
+          }
+        } catch (e) {
+          setState(() {
+            _errorMessage = 'Network error: Unable to connect to server.\nPlease check your connection and try again.';
+          });
+        } finally {
+          setState(() {
+            _isProcessing = false;
+          });
+        }
       }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Network error: Unable to connect to server.\nPlease check your connection and try again.';
-      });
-    } finally {
-      setState(() {
-        _isProcessing = false;
-      });
-    }
-  }
 
   //Helper function to convert color string to Color
   Color _parseColor(String colorName) {
