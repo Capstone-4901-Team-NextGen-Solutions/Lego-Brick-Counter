@@ -1,11 +1,12 @@
 // lib/services/api_service.dart
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 class ApiService {
-  // Platform-specific base URLs
+  // Platform-specific base URLs with web support
   static String get baseUrl {
     if (kIsWeb) {
       return 'http://localhost:5000/api'; // Web
@@ -16,7 +17,9 @@ class ApiService {
     }
   }
 
-  // Upload image to Flask backend
+  static const Duration timeout = Duration(seconds: 30);
+
+  // Upload image to Flask backend with platform detection
   static Future<Map<String, dynamic>> uploadImage(XFile imageFile) async {
     try {
       if (kIsWeb) {
@@ -24,11 +27,21 @@ class ApiService {
       } else {
         return await _uploadImageNative(imageFile);
       }
+    } on SocketException {
+      return {
+        'success': false,
+        'error': 'Cannot connect to server. Please check if the backend is running.'
+      };
+    } on TimeoutException catch (e) {
+      return {
+        'success': false,
+        'error': 'Request timed out. Please try again.'
+      };
     } catch (e) {
       print('Upload error: $e');
       return {
         'success': false,
-        'error': 'Failed to upload image: $e'
+        'error': 'Failed to upload image: ${e.toString()}'
       };
     }
   }
@@ -49,14 +62,14 @@ class ApiService {
         body: json.encode({
           'image': 'data:$mimeType;base64,$base64Image'
         }),
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
         return {
           'success': false,
-          'error': 'Server returned ${response.statusCode}: ${response.body}'
+          'error': 'Server error (${response.statusCode}): ${response.body}'
         };
       }
     } catch (e) {
@@ -67,7 +80,7 @@ class ApiService {
     }
   }
 
-  // Mobile/Desktop implementation - uses multipart form
+  // Mobile/Desktop implementation - uses multipart form with timeout
   static Future<Map<String, dynamic>> _uploadImageNative(XFile imageFile) async {
     try {
       var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload'));
@@ -79,15 +92,21 @@ class ApiService {
         filename: imageFile.name,
       ));
       
-      var response = await request.send();
-      final respStr = await response.stream.bytesToString();
+      var streamedResponse = await request.send().timeout(
+        timeout,
+        onTimeout: () {
+          throw TimeoutException('Request timed out after ${timeout.inSeconds} seconds');
+        },
+      );
       
-      if (response.statusCode == 200) {
+      final respStr = await streamedResponse.stream.bytesToString();
+      
+      if (streamedResponse.statusCode == 200) {
         return json.decode(respStr);
       } else {
         return {
           'success': false,
-          'error': 'Server returned ${response.statusCode}: $respStr'
+          'error': 'Server error (${streamedResponse.statusCode}): $respStr'
         };
       }
     } catch (e) {
@@ -98,22 +117,32 @@ class ApiService {
     }
   }
 
-  // Check if Flask server is running
+  // Check if Flask server is running with timeout
   static Future<Map<String, dynamic>> getHealth() async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/health'),
         headers: {'Accept': 'application/json'},
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
         return {
           'status': 'error',
-          'error': 'Server returned ${response.statusCode}'
+          'error': 'Server returned status ${response.statusCode}'
         };
       }
+    } on SocketException {
+      return {
+        'status': 'error',
+        'error': 'Cannot connect to server'
+      };
+    } on TimeoutException {
+      return {
+        'status': 'error',
+        'error': 'Connection timed out'
+      };
     } catch (e) {
       return {
         'status': 'error',
@@ -122,21 +151,25 @@ class ApiService {
     }
   }
 
-  // Get user inventory from backend
+  // Get user inventory from backend with timeout
   static Future<Map<String, dynamic>> getInventory() async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/inventory'),
         headers: {'Accept': 'application/json'},
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
         return {
-          'error': 'Failed to fetch inventory: ${response.statusCode}'
+          'error': 'Server returned status ${response.statusCode}'
         };
       }
+    } on SocketException {
+      return {'error': 'Cannot connect to server'};
+    } on TimeoutException {
+      return {'error': 'Connection timed out'};
     } catch (e) {
       return {
         'error': 'Failed to fetch inventory: $e'
@@ -144,21 +177,25 @@ class ApiService {
     }
   }
 
-  // Get set recommendations from backend
+  // Get set recommendations from backend with timeout
   static Future<Map<String, dynamic>> getRecommendations() async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/recommendations'),
         headers: {'Accept': 'application/json'},
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
         return {
-          'error': 'Failed to fetch recommendations: ${response.statusCode}'
+          'error': 'Server returned status ${response.statusCode}'
         };
       }
+    } on SocketException {
+      return {'error': 'Cannot connect to server'};
+    } on TimeoutException {
+      return {'error': 'Connection timed out'};
     } catch (e) {
       return {
         'error': 'Failed to fetch recommendations: $e'
@@ -173,7 +210,7 @@ class ApiService {
         Uri.parse('$baseUrl/inventory'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'bricks': bricks}),
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
@@ -183,6 +220,16 @@ class ApiService {
           'error': 'Failed to update inventory: ${response.statusCode}'
         };
       }
+    } on SocketException {
+      return {
+        'success': false,
+        'error': 'Cannot connect to server'
+      };
+    } on TimeoutException {
+      return {
+        'success': false,
+        'error': 'Request timed out'
+      };
     } catch (e) {
       return {
         'success': false,
@@ -191,13 +238,13 @@ class ApiService {
     }
   }
 
-  // Clear user inventory
+  // Clear user inventory with timeout
   static Future<Map<String, dynamic>> clearInventory() async {
     try {
       final response = await http.delete(
         Uri.parse('$baseUrl/inventory'),
         headers: {'Accept': 'application/json'},
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
@@ -207,6 +254,16 @@ class ApiService {
           'error': 'Failed to clear inventory: ${response.statusCode}'
         };
       }
+    } on SocketException {
+      return {
+        'success': false,
+        'error': 'Cannot connect to server'
+      };
+    } on TimeoutException {
+      return {
+        'success': false,
+        'error': 'Request timed out'
+      };
     } catch (e) {
       return {
         'success': false,
@@ -215,7 +272,7 @@ class ApiService {
     }
   }
 
-  // Test connection to backend with timeout
+  // Test connection to backend with timeout (quick test)
   static Future<bool> testConnection() async {
     try {
       final response = await http.get(
@@ -236,7 +293,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl/brick/$brickId'),
         headers: {'Accept': 'application/json'},
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
@@ -245,6 +302,10 @@ class ApiService {
           'error': 'Brick not found: $brickId'
         };
       }
+    } on SocketException {
+      return {'error': 'Cannot connect to server'};
+    } on TimeoutException {
+      return {'error': 'Connection timed out'};
     } catch (e) {
       return {
         'error': 'Failed to get brick info: $e'
@@ -258,7 +319,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl/set/$setId'),
         headers: {'Accept': 'application/json'},
-      );
+      ).timeout(timeout);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
@@ -267,6 +328,10 @@ class ApiService {
           'error': 'Set not found: $setId'
         };
       }
+    } on SocketException {
+      return {'error': 'Cannot connect to server'};
+    } on TimeoutException {
+      return {'error': 'Connection timed out'};
     } catch (e) {
       return {
         'error': 'Failed to get set info: $e'
