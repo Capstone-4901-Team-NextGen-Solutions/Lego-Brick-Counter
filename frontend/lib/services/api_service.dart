@@ -1,4 +1,4 @@
-// lib/services/api_service.dart
+//lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -7,14 +7,14 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io'; 
 
 class ApiService {
-  // Platform-specific base URLs with web support
+  //Platform-specific base URLs with web support
   static String get baseUrl {
     if (kIsWeb) {
-      return 'http://localhost:5000/api'; // Web
+      return 'http://localhost:5000/api'; //Web
     } else {
-      return 'http://10.0.2.2:5000/api'; // Android emulator
-      // For iOS simulator: 'http://localhost:5000/api'
-      // For real device: 'http://<your-computer-ip>:5000/api'
+      return 'http://10.0.2.2:5000/api'; //Android emulator
+      //For iOS simulator: 'http://localhost:5000/api'
+      //For real device: 'http://<your-computer-ip>:5000/api'
     }
   }
 
@@ -47,7 +47,7 @@ class ApiService {
     }
   }
 
-  // Web implementation - uses base64 encoding
+  //Web implementation - uses base64 encoding
   static Future<Map<String, dynamic>> _uploadImageWeb(XFile imageFile) async {
     try {
       final bytes = await imageFile.readAsBytes();
@@ -81,7 +81,7 @@ class ApiService {
     }
   }
 
-  // Mobile/Desktop implementation - uses multipart form with timeout
+  //Mobile/Desktop implementation - uses multipart form with timeout
   static Future<Map<String, dynamic>> _uploadImageNative(XFile imageFile) async {
     try {
       var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload'));
@@ -118,7 +118,7 @@ class ApiService {
     }
   }
 
-  // Check if Flask server is running with timeout
+  //Check if Flask server is running with timeout
   static Future<Map<String, dynamic>> getHealth() async {
     try {
       final response = await http.get(
@@ -152,7 +152,7 @@ class ApiService {
     }
   }
 
-  // Get user inventory from backend with timeout
+  //Get user inventory from backend with timeout
   static Future<Map<String, dynamic>> getInventory() async {
     try {
       final response = await http.get(
@@ -178,7 +178,7 @@ class ApiService {
     }
   }
 
-  // Get set recommendations from backend with timeout
+  //Get set recommendations from backend with timeout
   static Future<Map<String, dynamic>> getRecommendations() async {
     try {
       final response = await http.get(
@@ -204,7 +204,7 @@ class ApiService {
     }
   }
 
-  // Update inventory with new bricks (after scan)
+  //Update inventory with new bricks (after scan)
   static Future<Map<String, dynamic>> updateInventory(List<Map<String, dynamic>> bricks) async {
     try {
       final response = await http.post(
@@ -239,7 +239,7 @@ class ApiService {
     }
   }
 
-  // Clear user inventory with timeout
+  //Clear user inventory with timeout
   static Future<Map<String, dynamic>> clearInventory() async {
     try {
       final response = await http.delete(
@@ -273,7 +273,7 @@ class ApiService {
     }
   }
 
-  // Test connection to backend with timeout (quick test)
+  //Test connection to backend with timeout (quick test)
   static Future<bool> testConnection() async {
     try {
       final response = await http.get(
@@ -288,7 +288,7 @@ class ApiService {
     }
   }
 
-  // Get detailed brick information by ID
+  //Get detailed brick information by ID
   static Future<Map<String, dynamic>> getBrickInfo(String brickId) async {
     try {
       final response = await http.get(
@@ -314,7 +314,7 @@ class ApiService {
     }
   }
 
-  // Get Lego set information by set ID
+  //Get Lego set information by set ID
   static Future<Map<String, dynamic>> getSetInfo(String setId) async {
     try {
       final response = await http.get(
