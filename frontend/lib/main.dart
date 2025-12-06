@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:typed_data'; // ADD THIS IMPORT
 import 'package:flutter/foundation.dart' show kIsWeb;
-
+import 'package:cross_file/cross_file.dart';
 
 void main() {
   runApp(const LegoApp());
@@ -93,8 +94,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   List<LegoBrick> _scannedBricks = [];
   bool _isProcessing = false;
   String? _errorMessage;
-  File? _selectedImage;
-  File? _lastFailedImage;
+  XFile? _selectedImage;
+  XFile? _lastFailedImage;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
@@ -124,7 +125,6 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          //Camera/Upload Section
           Card(
             elevation: 4,
             shape: RoundedRectangleBorder(
@@ -151,7 +151,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
                   ),
                   const SizedBox(height: 16),
                   
-                  // Image Preview
+                  // Image Preview - CORRECTED
                   if (_selectedImage != null)
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
@@ -162,11 +162,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          _selectedImage!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        ),
+                        child: _buildImagePreview(), // JUST THIS, NO EXTRA CODE
                       ),
                     ),
                   
@@ -271,7 +267,6 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
           
           const SizedBox(height: 16),
           
-          //Results Section
           Expanded(
             child: Card(
               elevation: 4,
@@ -367,6 +362,37 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
     );
   }
 
+  Widget _buildImagePreview() {
+    if (_selectedImage == null) return Container();
+    
+    if (kIsWeb) {
+      // For web: Display image from bytes/memory
+      return FutureBuilder<Uint8List>(
+        future: _selectedImage!.readAsBytes(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError || !snapshot.hasData) {
+            return Center(child: Icon(Icons.error, color: Colors.red));
+          }
+          return Image.memory(
+            snapshot.data!,
+            fit: BoxFit.cover,
+            width: double.infinity,
+          );
+        },
+      );
+    } else {
+      // For mobile: Convert XFile to File
+      return Image.file(
+        File(_selectedImage!.path),
+        fit: BoxFit.cover,
+        width: double.infinity,
+      );
+    }
+  }
+
   Widget _buildBrickCard(LegoBrick brick) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -378,7 +404,6 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
         padding: const EdgeInsets.all(12.0),
         child: Row(
           children: [
-            // Color indicator
             Container(
               width: 50,
               height: 50,
@@ -389,7 +414,6 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
               ),
             ),
             const SizedBox(width: 16),
-            // Brick info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -446,7 +470,6 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
                 ],
               ),
             ),
-            // Quantity
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -518,140 +541,123 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   }
 
   void _takePhoto() async {
-  setState(() {
-    _errorMessage = null;
-  });
-
-  try {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1200,
-      maxHeight: 1200,
-      imageQuality: 80,
-    );
-
-    if (image != null) {
-      setState(() {
-        _selectedImage = File(image.path);
-      });
-      await _processImage(image);  //Pass XFile directly
-    }
-  } catch (e) {
     setState(() {
-      _errorMessage = 'Camera error: ${e.toString()}';
+      _errorMessage = null;
     });
-  }
-}
 
-  void _uploadImage() async {
-  setState(() {
-    _errorMessage = null;
-  });
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 80,
+      );
 
-  try {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1200,
-      maxHeight: 1200,
-      imageQuality: 80,
-    );
-
-    if (image != null) {
+      if (image != null) {
+        setState(() {
+          _selectedImage = image;
+        });
+        await _processImage(image);
+      }
+    } catch (e) {
       setState(() {
-        _selectedImage = File(image.path);
+        _errorMessage = 'Camera error: ${e.toString()}';
       });
-      await _processImage(image);  //Pass XFile directly
     }
-  } catch (e) {
-    setState(() {
-      _errorMessage = 'Gallery error: ${e.toString()}';
-    });
   }
-}
 
   void _retryUpload() {
     if (_lastFailedImage != null) {
       _processImage(_lastFailedImage!);
-void _uploadImage() async {
-  try {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(  //XFile instead of File
-      source: ImageSource.gallery,
-      maxWidth: 1200,
-      maxHeight: 1200,
-      imageQuality: 80,
-    );
-
-    if (image != null) {
-      await _processImage(image);  //Pass XFile directly, no File() wrapper
     }
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Gallery error: $e')),
-    );
   }
-}
-      Future<void> _processImage(XFile imageFile) async {  //Changed parameter to XFile
+
+  void _uploadImage() async {
+    setState(() {
+      _errorMessage = null;
+    });
+
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 80,
+      );
+
+      if (image != null) {
         setState(() {
-          _isProcessing = true;
-          _errorMessage = null;
-          _lastFailedImage = imageFile;
-          });
-
-        try {
-          var result = await ApiService.uploadImage(imageFile);  //Pass XFile directly
-
-          if (result['success'] == true) {
-            setState(() {
-              _scannedBricks = (result['results'] as List)
-                  .map((brickData) => LegoBrick(
-                        id: brickData['id'],
-                        name: brickData['name'],
-                        color: _parseColor(brickData['color']),
-                        quantity: brickData['quantity'],
-                        confidence: brickData['confidence']?.toDouble(),
-                      ))
-                  .toList();
-              _errorMessage = null;
-            });
-
-            _animationController.forward(from: 0);
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Icon(Icons.check_circle, color: Colors.white),
-                    const SizedBox(width: 12),
-                    Text('Found ${_scannedBricks.length} brick(s)!'),
-                  ],
-                ),
-                backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            );
-          } else {
-            setState(() {
-              _errorMessage = result['error'] ?? 'Upload failed. Please try again.';
-            });
-          }
-        } catch (e) {
-          setState(() {
-            _errorMessage = 'Network error: Unable to connect to server.\nPlease check your connection and try again.';
-          });
-        } finally {
-          setState(() {
-            _isProcessing = false;
-          });
-        }
+          _selectedImage = image;
+        });
+        await _processImage(image);
       }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Gallery error: ${e.toString()}';
+      });
+    }
+  }
 
-  //Helper function to convert color string to Color
+  Future<void> _processImage(XFile imageFile) async {
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+      _lastFailedImage = imageFile;
+    });
+
+    try {
+      var result = await ApiService.uploadImage(imageFile);
+
+      if (result['success'] == true) {
+        setState(() {
+          _scannedBricks = (result['results'] as List)
+              .map((brickData) => LegoBrick(
+                    id: brickData['id'],
+                    name: brickData['name'],
+                    color: _parseColor(brickData['color']),
+                    quantity: brickData['quantity'],
+                    confidence: brickData['confidence']?.toDouble(),
+                  ))
+              .toList();
+          _errorMessage = null;
+        });
+
+        _animationController.forward(from: 0);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text('Found ${_scannedBricks.length} brick(s)!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      } else {
+        setState(() {
+          _errorMessage = result['error'] ?? 'Upload failed. Please try again.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Network error: Unable to connect to server.\nPlease check your connection and try again.';
+      });
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
   Color _parseColor(String colorName) {
     switch (colorName.toLowerCase()) {
       case 'red': return Colors.red;
