@@ -17,12 +17,17 @@ dependencies:
   universal_io: ^2.2.2  # For platform-agnostic IO
   universal_platform: ^1.0.0  # For platform detection
   cupertino_icons: ^1.0.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
   flutter_launcher_icons: "^0.13.1"
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.6
 
 flutter_icons:
   android: true

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
+import 'services/database_service.dart';
+import 'models/lego_brick_model.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseService.init();
   runApp(const LegoApp());
 }
 
@@ -612,16 +616,24 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       if (!mounted) return;
 
       if (result['success'] == true) {
+        final List<LegoBrick> newBricks = (result['results'] as List)
+            .map((brickData) => LegoBrick(
+                  id: brickData['id'],
+                  name: brickData['name'],
+                  color: _parseColor(brickData['color']),
+                  quantity: brickData['quantity'],
+                  confidence: brickData['confidence']?.toDouble(),
+                ))
+            .toList();
+
+        // Save to database
+        for (var brick in newBricks) {
+          final brickModel = LegoBrickModel.fromLegoBrick(brick);
+          await DatabaseService.mergeOrAddBrick(brickModel);
+        }
+
         setState(() {
-          _scannedBricks = (result['results'] as List)
-              .map((brickData) => LegoBrick(
-                    id: brickData['id'],
-                    name: brickData['name'],
-                    color: _parseColor(brickData['color']),
-                    quantity: brickData['quantity'],
-                    confidence: brickData['confidence']?.toDouble(),
-                  ))
-              .toList();
+          _scannedBricks = newBricks;
           _errorMessage = null;
         });
 
@@ -633,7 +645,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
               children: [
                 const Icon(Icons.check_circle, color: Colors.white),
                 const SizedBox(width: 12),
-                Text('Found ${_scannedBricks.length} brick(s)!'),
+                Text('Found ${_scannedBricks.length} brick(s) and saved to inventory!'),
               ],
             ),
             backgroundColor: Colors.green,
@@ -683,16 +695,24 @@ class InventoryScreen extends StatefulWidget {
 }
 
 class _InventoryScreenState extends State<InventoryScreen> {
-  final List<LegoBrick> _inventory = [
-    LegoBrick(id: '3001', name: '2x4 Brick', color: Colors.red, quantity: 15),
-    LegoBrick(id: '3003', name: '2x2 Brick', color: Colors.blue, quantity: 12),
-    LegoBrick(id: '3023', name: '1x2 Plate', color: Colors.yellow, quantity: 20),
-    LegoBrick(id: '3005', name: '1x1 Brick', color: Colors.green, quantity: 8),
-    LegoBrick(id: '2456', name: '2x6 Brick', color: Colors.black, quantity: 3),
-  ];
+  List<LegoBrickModel> _inventory = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInventory();
+  }
+
+  void _loadInventory() {
+    setState(() {
+      _inventory = DatabaseService.getAllBricks();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final stats = DatabaseService.getStatistics();
+    
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -705,9 +725,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildStatItem('Total Bricks', '58'),
-                  _buildStatItem('Unique Types', '5'),
-                  _buildStatItem('Sets Possible', '3'),
+                  _buildStatItem('Total Bricks', '${stats['totalBricks']}'),
+                  _buildStatItem('Unique Types', '${stats['uniqueTypes']}'),
+                  _buildStatItem('Recent Scans', '${stats['recentScans']}'),
                 ],
               ),
             ),
@@ -738,29 +758,61 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ),
                     const SizedBox(height: 8),
                     Expanded(
-                      child: ListView.builder(
-                        itemCount: _inventory.length,
-                        itemBuilder: (context, index) {
-                          final brick = _inventory[index];
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            child: ListTile(
-                              leading: Container(
-                                width: 40,
-                                height: 40,
-                                color: brick.color,
+                      child: _inventory.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.inventory_2_outlined, 
+                                       size: 64, 
+                                       color: Colors.grey[400]),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No bricks in inventory',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Scan some bricks to get started!',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
                               ),
-                              title: Text(brick.name),
-                              subtitle: Text('ID: ${brick.id}'),
-                              trailing: Chip(
-                                label: Text('${brick.quantity}'),
-                                backgroundColor: Colors.red[100],
-                              ),
-                              onTap: () => _showBrickDetails(brick),
+                            )
+                          : ListView.builder(
+                              itemCount: _inventory.length,
+                              itemBuilder: (context, index) {
+                                final brick = _inventory[index];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  child: ListTile(
+                                    leading: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: brick.color,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: Colors.grey[300]!),
+                                      ),
+                                    ),
+                                    title: Text(brick.name),
+                                    subtitle: Text('ID: ${brick.id}'),
+                                    trailing: Chip(
+                                      label: Text('${brick.quantity}'),
+                                      backgroundColor: Colors.red[100],
+                                    ),
+                                    onTap: () => _showBrickDetails(brick),
+                                    onLongPress: () => _showBrickOptions(brick),
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                     ),
                   ],
                 ),
@@ -788,14 +840,119 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _searchInventory() {
-    //TODO: Implement search functionality
     showSearch(
       context: context,
       delegate: _BrickSearchDelegate(_inventory),
     );
   }
 
-  void _showBrickDetails(LegoBrick brick) {
+  void _showBrickOptions(LegoBrickModel brick) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Edit Quantity'),
+              onTap: () {
+                Navigator.pop(context);
+                _editBrickQuantity(brick);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteBrick(brick);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Details'),
+              onTap: () {
+                Navigator.pop(context);
+                _showBrickDetails(brick);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _editBrickQuantity(LegoBrickModel brick) {
+    final controller = TextEditingController(text: '${brick.quantity}');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Quantity'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Quantity',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final newQuantity = int.tryParse(controller.text);
+              if (newQuantity != null && newQuantity > 0) {
+                brick.updateQuantity(newQuantity);
+                _loadInventory();
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Quantity updated')),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteBrick(LegoBrickModel brick) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Brick'),
+        content: Text('Are you sure you want to delete ${brick.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await DatabaseService.deleteBrick(brick.id);
+              _loadInventory();
+              if (!context.mounted) return;
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${brick.name} deleted')),
+              );
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBrickDetails(LegoBrickModel brick) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -804,13 +961,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('ID: ${brick.id}'),
-            Text('Quantity: ${brick.quantity}'),
+            Text('ID: ${brick.id}', style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
+            Text('Quantity: ${brick.quantity}', style: const TextStyle(fontSize: 16)),
+            if (brick.confidence != null) ...[
+              const SizedBox(height: 8),
+              Text('Confidence: ${(brick.confidence! * 100).toStringAsFixed(1)}%',
+                   style: const TextStyle(fontSize: 14, color: Colors.grey)),
+            ],
+            const SizedBox(height: 8),
+            Text('Scanned: ${_formatDate(brick.scannedAt)}',
+                 style: const TextStyle(fontSize: 14, color: Colors.grey)),
             const SizedBox(height: 16),
             Container(
-              width: 50,
-              height: 50,
-              color: brick.color,
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: brick.color,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
             ),
           ],
         ),
@@ -822,6 +992,21 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ],
       ),
     );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    
+    if (difference.inDays == 0) {
+      return 'Today';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return '${date.month}/${date.day}/${date.year}';
+    }
   }
 }
 
@@ -1052,7 +1237,7 @@ class LegoSet {
 
 //Search Delegate
 class _BrickSearchDelegate extends SearchDelegate {
-  final List<LegoBrick> bricks;
+  final List<LegoBrickModel> bricks;
 
   _BrickSearchDelegate(this.bricks);
 
@@ -1089,9 +1274,20 @@ class _BrickSearchDelegate extends SearchDelegate {
   }
 
   Widget _buildSearchResults() {
-    final results = bricks.where((brick) =>
-        brick.name.toLowerCase().contains(query.toLowerCase()) ||
-        brick.id.contains(query)).toList();
+    final results = DatabaseService.searchBricks(query);
+
+    if (results.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text('No bricks found', style: TextStyle(color: Colors.grey[600])),
+          ],
+        ),
+      );
+    }
 
     return ListView.builder(
       itemCount: results.length,
@@ -1101,10 +1297,14 @@ class _BrickSearchDelegate extends SearchDelegate {
           leading: Container(
             width: 40,
             height: 40,
-            color: brick.color,
+            decoration: BoxDecoration(
+              color: brick.color,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
           ),
           title: Text(brick.name),
-          subtitle: Text('ID: ${brick.id}'),
+          subtitle: Text('ID: ${brick.id} • Qty: ${brick.quantity}'),
           trailing: Text('Qty: ${brick.quantity}'),
         );
       },
