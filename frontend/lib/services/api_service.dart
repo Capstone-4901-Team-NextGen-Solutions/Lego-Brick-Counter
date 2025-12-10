@@ -33,13 +33,12 @@ class ApiService {
         'success': false,
         'error': 'Cannot connect to server. Please check if the backend is running.'
       };
-    } on TimeoutException catch (e) {
+    } on TimeoutException {
       return {
         'success': false,
         'error': 'Request timed out. Please try again.'
       };
     } catch (e) {
-      print('Upload error: $e');
       return {
         'success': false,
         'error': 'Failed to upload image: ${e.toString()}'
@@ -283,7 +282,6 @@ class ApiService {
       
       return response.statusCode == 200;
     } catch (e) {
-      print('Connection test failed: $e');
       return false;
     }
   }

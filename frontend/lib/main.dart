@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'dart:typed_data'; // ADD THIS IMPORT
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:cross_file/cross_file.dart';
 
 void main() {
   runApp(const LegoApp());
@@ -371,10 +370,10 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
         future: _selectedImage!.readAsBytes(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError || !snapshot.hasData) {
-            return Center(child: Icon(Icons.error, color: Colors.red));
+            return const Center(child: Icon(Icons.error, color: Colors.red));
           }
           return Image.memory(
             snapshot.data!,
@@ -609,6 +608,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
 
     try {
       var result = await ApiService.uploadImage(imageFile);
+
+      if (!mounted) return;
 
       if (result['success'] == true) {
         setState(() {
