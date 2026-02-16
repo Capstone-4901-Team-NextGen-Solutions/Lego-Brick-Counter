@@ -40,60 +40,6 @@ class AuthService {
   }
 }
 
-
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SizedBox(
-          width: 400,
-          child: Card(
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Lego Brick Counter',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'Password'),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 32,
-                        vertical: 14,
-                      ),
-                    ),
-                    child: const Text('Login'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -103,9 +49,8 @@ class AuthGate extends StatelessWidget {
       valueListenable: AuthService.loggedIn,
       builder: (context, isLoggedIn, _) {
         return isLoggedIn
-        ? const HomeScreen()
-        : const AuthPage();
-
+            ? const HomeScreen()
+            : const AuthPage();
       },
     );
   }
@@ -116,15 +61,6 @@ class AuthPage extends StatefulWidget {
 
   @override
   State<AuthPage> createState() => _AuthPageState();
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
-    }
-
 }
 
 class _AuthPageState extends State<AuthPage> {
@@ -133,6 +69,14 @@ class _AuthPageState extends State<AuthPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
 
   void _submit() {
     final password = _passwordController.text.trim();
@@ -143,14 +87,12 @@ class _AuthPageState extends State<AuthPage> {
           const SnackBar(content: Text('Passwords do not match')),
         );
         return;
-        }
+      }
+    }
+
+    // TODO: login/register API
+    AuthService.login();
   }
-
-  // TODO: login/register API
-  AuthService.login();
-}
-
-  
 
   @override
   Widget build(BuildContext context) {
@@ -172,22 +114,17 @@ class _AuthPageState extends State<AuthPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
                   TextField(
                     controller: _emailController,
                     decoration: const InputDecoration(labelText: 'Email'),
                   ),
-
                   const SizedBox(height: 16),
-
                   TextField(
                     controller: _passwordController,
                     obscureText: true,
                     decoration: const InputDecoration(labelText: 'Password'),
                   ),
-
                   if (!isLogin) ...[
                     const SizedBox(height: 16),
                     TextField(
@@ -197,9 +134,7 @@ class _AuthPageState extends State<AuthPage> {
                           const InputDecoration(labelText: 'Confirm Password'),
                     ),
                   ],
-
                   const SizedBox(height: 24),
-
                   ElevatedButton(
                     onPressed: _submit,
                     style: ElevatedButton.styleFrom(
@@ -209,9 +144,7 @@ class _AuthPageState extends State<AuthPage> {
                     ),
                     child: Text(isLogin ? 'Login' : 'Register'),
                   ),
-
                   const SizedBox(height: 12),
-
                   TextButton(
                     onPressed: () {
                       setState(() {
@@ -326,6 +259,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  // ... (rest of your ScanScreen code remains the same)
+  
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -579,10 +514,10 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
         future: _selectedImage!.readAsBytes(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError || !snapshot.hasData) {
-            return Center(child: Icon(Icons.error, color: Colors.red));
+            return const Center(child: Icon(Icons.error, color: Colors.red));
           }
           return Image.memory(
             snapshot.data!,
@@ -1206,9 +1141,8 @@ class ProfileScreen extends StatelessWidget {
                   title: 'Logout',
                   onTap: () {
                     AuthService.logout();
-                    },
-                  ),
-
+                  },
+                ),
               ],
             ),
           ),
