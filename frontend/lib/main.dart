@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'dart:typed_data'; // ADD THIS IMPORT
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cross_file/cross_file.dart';
 
@@ -21,7 +21,148 @@ class LegoApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const HomeScreen(),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class AuthService {
+  static final ValueNotifier<bool> loggedIn = ValueNotifier(false);
+
+  static bool get isLoggedIn => loggedIn.value;
+
+  static void login() {
+    loggedIn.value = true;
+  }
+
+  static void logout() {
+    loggedIn.value = false;
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: AuthService.loggedIn,
+      builder: (context, isLoggedIn, _) {
+        return isLoggedIn
+            ? const HomeScreen()
+            : const AuthPage();
+      },
+    );
+  }
+}
+
+class AuthPage extends StatefulWidget {
+  const AuthPage({super.key});
+
+  @override
+  State<AuthPage> createState() => _AuthPageState();
+}
+
+class _AuthPageState extends State<AuthPage> {
+  bool isLogin = true;
+
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final password = _passwordController.text.trim();
+
+    if (!isLogin) {
+      if (password != _confirmPasswordController.text.trim()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Passwords do not match')),
+        );
+        return;
+      }
+    }
+
+    // TODO: login/register API
+    AuthService.login();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: SizedBox(
+          width: 400,
+          child: Card(
+            elevation: 4,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isLogin ? 'Login' : 'Create Account',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Password'),
+                  ),
+                  if (!isLogin) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _confirmPasswordController,
+                      obscureText: true,
+                      decoration:
+                          const InputDecoration(labelText: 'Confirm Password'),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                    child: Text(isLogin ? 'Login' : 'Register'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        isLogin = !isLogin;
+                      });
+                    },
+                    child: Text(
+                      isLogin
+                          ? 'New here? Create an account'
+                          : 'Already have an account? Login',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -118,6 +259,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  // ... (rest of your ScanScreen code remains the same)
+  
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -151,7 +294,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
                   ),
                   const SizedBox(height: 16),
                   
-                  // Image Preview - CORRECTED
+                  //Image Preview
                   if (_selectedImage != null)
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
@@ -162,11 +305,11 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: _buildImagePreview(), // JUST THIS, NO EXTRA CODE
+                        child: _buildImagePreview(), 
                       ),
                     ),
                   
-                  // Loading State
+                  //Loading State
                   if (_isProcessing)
                     Column(
                       children: [
@@ -196,7 +339,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
                         ),
                       ],
                     )
-                  // Error State
+                  //Error State
                   else if (_errorMessage != null)
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -243,7 +386,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
                         ],
                       ),
                     )
-                  // Action Buttons
+                  //Action Buttons
                   else
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -366,15 +509,15 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
     if (_selectedImage == null) return Container();
     
     if (kIsWeb) {
-      // For web: Display image from bytes/memory
+      //For web: Display image from bytes/memory
       return FutureBuilder<Uint8List>(
         future: _selectedImage!.readAsBytes(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError || !snapshot.hasData) {
-            return Center(child: Icon(Icons.error, color: Colors.red));
+            return const Center(child: Icon(Icons.error, color: Colors.red));
           }
           return Image.memory(
             snapshot.data!,
@@ -384,7 +527,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
         },
       );
     } else {
-      // For mobile: Convert XFile to File
+      //For mobile: Convert XFile to File
       return Image.file(
         File(_selectedImage!.path),
         fit: BoxFit.cover,
@@ -992,6 +1135,13 @@ class ProfileScreen extends StatelessWidget {
                   icon: Icons.info,
                   title: 'About',
                   onTap: () {},
+                ),
+                _buildProfileOption(
+                  icon: Icons.logout,
+                  title: 'Logout',
+                  onTap: () {
+                    AuthService.logout();
+                  },
                 ),
               ],
             ),
