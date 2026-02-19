@@ -1,309 +1,253 @@
-# brick_detector.py - ONNX-based LEGO Brick Detector
+# brick_detector.py - ONNX-based LEGO Brick Detector (v2.0 - cleaned up)
+
+from typing import List, Dict, Tuple
 
 import cv2
 import numpy as np
 import onnxruntime
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class BrickDetector:
-    def __init__(self, model_path='best.onnx', conf_threshold=0.25, iou_threshold=0.45):
-        """
-        Initialize the ONNX-based brick detector
-        
-        Args:
-            model_path: Path to ONNX model file
-            conf_threshold: Confidence threshold for detections
-            iou_threshold: IoU threshold for NMS
-        """
+    """YOLOv8 ONNX brick detector with colour classification."""
+
+    # Aspect-ratio rules for geometric brick classification.
+    # Each entry: (label, min_aspect, max_aspect, max_rel_height)
+    #   aspect = bbox_width / bbox_height
+    #   rel_height = bbox_height / image_height  (helps separate bricks from plates)
+    _BRICK_GEOMETRY = [
+        # Plates are thin (small relative height)
+        ("1x2 Plate", 1.4, 2.8, 0.06),
+        ("2x4 Plate", 2.8, 5.0, 0.06),
+        ("2x3 Plate", 1.8, 3.5, 0.06),
+        ("2x2 Plate", 0.7, 1.4, 0.06),
+        # Bricks (taller relative height)
+        ("1x1 Brick", 0.0, 0.8, 1.0),
+        ("2x2 Brick", 0.8, 1.3, 1.0),
+        ("1x2 Brick", 1.3, 1.8, 1.0),
+        ("2x4 Brick", 1.8, 2.8, 1.0),
+        ("1x4 Brick", 2.8, 4.0, 1.0),
+        ("2x6 Brick", 2.8, 4.5, 1.0),
+    ]
+
+    def __init__(
+        self,
+        model_path: str = "best.onnx",
+        conf_threshold: float = 0.20,
+        iou_threshold: float = 0.45,
+    ):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
-        
-        # Load ONNX model
-        print(f"🔄 Loading ONNX model from: {model_path}")
+
+        logger.info(f"Loading ONNX model from {model_path}")
         self.session = onnxruntime.InferenceSession(
-            model_path,
-            providers=['CPUExecutionProvider']
+            model_path, providers=["CPUExecutionProvider"]
         )
-        
-        # Get model input details
+
         self.input_name = self.session.get_inputs()[0].name
-        self.input_shape = self.session.get_inputs()[0].shape
-        self.input_size = self.input_shape[2] if len(self.input_shape) > 2 else 640
-        
-        # Detection thresholds
+        input_shape = self.session.get_inputs()[0].shape
+        self.input_size = input_shape[2] if len(input_shape) > 2 else 640
+
+        # Determine how many classes the model actually outputs
+        out_shape = self.session.get_outputs()[0].shape
+        # YOLOv8 output: [1, 4+num_classes, 8400]
+        self.num_model_classes = out_shape[1] - 4 if out_shape[1] < out_shape[2] else 1
+
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
-        
-        # Load class names
         self.class_names = self._load_class_names()
-        
-        print(f"✅ Model loaded successfully")
-        print(f"   Input size: {self.input_size}x{self.input_size}")
-        print(f"   Classes: {self.class_names}")
-        print(f"   Confidence threshold: {self.conf_threshold}")
-    
-    def _load_class_names(self, class_file='class_names.txt'):
-        """Load class names from file"""
+
+        logger.info(
+            f"Model loaded – input {self.input_size}×{self.input_size}, "
+            f"model_classes={self.num_model_classes}, "
+            f"label_names={self.class_names}, conf≥{self.conf_threshold}"
+        )
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _load_class_names(class_file: str = "class_names.txt") -> List[str]:
         if os.path.exists(class_file):
-            with open(class_file, 'r') as f:
-                return [line.strip() for line in f.readlines()]
-        return ['lego_brick']  # Default
-    
-    def detect_bricks(self, image_path):
-        """
-        Detect and classify Lego bricks in an image
-        
-        Args:
-            image_path: Path to input image
-            
-        Returns:
-            List of detection dictionaries
-        """
-        # Read image
+            with open(class_file) as f:
+                return [line.strip() for line in f if line.strip()]
+        return ["lego_brick"]
+
+    # ------------------------------------------------------------------
+    def detect_bricks(self, image_path: str) -> List[Dict]:
         image = cv2.imread(image_path)
         if image is None:
-            raise ValueError(f"Could not read image: {image_path}")
-        
-        original_shape = image.shape[:2]  # (height, width)
-        
-        # Preprocess
-        preprocessed, ratio, padding = self._preprocess_image(image)
-        
-        # Run inference
+            raise ValueError(f"Cannot read image: {image_path}")
+
+        original_hw = image.shape[:2]
+        preprocessed, scale, padding = self._preprocess(image)
         outputs = self.session.run(None, {self.input_name: preprocessed})
-        
-        # Post-process
-        detections = self._post_process(outputs[0], ratio, padding, original_shape)
-        
-        # Format results
-        results = self._format_results(detections, image)
-        
-        return results
-    
-    def _preprocess_image(self, img):
-        """
-        Preprocess image for YOLO inference
-        - Resize with letterboxing
-        - Normalize to [0, 1]
-        - Convert to CHW format
-        """
-        # Get original dimensions
+        detections = self._postprocess(outputs[0], scale, padding, original_hw)
+        return self._format(detections, image)
+
+    # ------------------------------------------------------------------
+    def _preprocess(self, img: np.ndarray):
         h, w = img.shape[:2]
-        
-        # Calculate scale ratio
         scale = min(self.input_size / h, self.input_size / w)
         new_h, new_w = int(h * scale), int(w * scale)
-        
-        # Resize image
-        img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-        
-        # Create padded image (letterboxing)
-        padded_img = np.full((self.input_size, self.input_size, 3), 114, dtype=np.uint8)
-        
-        # Calculate padding offsets (center the image)
+
+        resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        canvas = np.full((self.input_size, self.input_size, 3), 114, dtype=np.uint8)
         pad_h = (self.input_size - new_h) // 2
         pad_w = (self.input_size - new_w) // 2
-        
-        # Place resized image in center
-        padded_img[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = img_resized
-        
-        # Convert BGR to RGB
-        img_rgb = cv2.cvtColor(padded_img, cv2.COLOR_BGR2RGB)
-        
-        # Normalize to [0, 1]
-        img_normalized = img_rgb.astype(np.float32) / 255.0
-        
-        # Transpose HWC to CHW
-        img_transposed = img_normalized.transpose(2, 0, 1)
-        
-        # Add batch dimension
-        img_batch = np.expand_dims(img_transposed, axis=0)
-        
-        return img_batch, scale, (pad_w, pad_h)
-    
-    def _post_process(self, predictions, scale, padding, original_shape):
-        """
-        Post-process YOLOv8 predictions
-        - Extract boxes and scores
-        - Apply confidence threshold
-        - Apply NMS
-        - Scale boxes to original image size
-        """
-        # Remove batch dimension and transpose
-        # YOLOv8 output: [batch, 84, 8400] -> [8400, 84]
-        predictions = np.squeeze(predictions).T
-        
-        # Extract box coordinates and scores
-        boxes = predictions[:, :4]  # [x_center, y_center, width, height]
-        scores = predictions[:, 4:].max(axis=1)  # Max confidence
-        class_ids = predictions[:, 4:].argmax(axis=1)
-        
-        # Filter by confidence threshold
+        canvas[pad_h : pad_h + new_h, pad_w : pad_w + new_w] = resized
+
+        blob = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        blob = blob.transpose(2, 0, 1)[np.newaxis, ...]
+        return blob, scale, (pad_w, pad_h)
+
+    # ------------------------------------------------------------------
+    def _postprocess(self, preds: np.ndarray, scale, padding, original_hw):
+        preds = np.squeeze(preds).T  # [8400, 4+C]
+
+        boxes = preds[:, :4]
+        scores = preds[:, 4:].max(axis=1)
+        class_ids = preds[:, 4:].argmax(axis=1)
+
         mask = scores > self.conf_threshold
-        boxes = boxes[mask]
-        scores = scores[mask]
-        class_ids = class_ids[mask]
-        
+        boxes, scores, class_ids = boxes[mask], scores[mask], class_ids[mask]
+
         if len(boxes) == 0:
             return []
-        
-        # Convert from xywh to xyxy format
+
         boxes = self._xywh2xyxy(boxes)
-        
-        # Apply Non-Maximum Suppression
-        indices = self._non_max_suppression(boxes, scores)
-        
-        if len(indices) == 0:
+        keep = self._nms(boxes, scores)
+        if len(keep) == 0:
             return []
-        
-        boxes = boxes[indices]
-        scores = scores[indices]
-        class_ids = class_ids[indices]
-        
-        # Scale boxes back to original image
-        boxes = self._scale_boxes(boxes, scale, padding, original_shape)
-        
-        # Combine into detection list
-        detections = []
-        for box, score, class_id in zip(boxes, scores, class_ids):
-            detections.append({
-                'bbox': box.tolist(),
-                'confidence': float(score),
-                'class_id': int(class_id),
-                'class_name': self.class_names[class_id] if class_id < len(self.class_names) else 'unknown'
+
+        boxes, scores, class_ids = boxes[keep], scores[keep], class_ids[keep]
+        boxes = self._rescale(boxes, scale, padding, original_hw)
+
+        img_h = original_hw[0]
+        results = []
+        for box, score, cid in zip(boxes, scores, class_ids):
+            # If the model is single-class, classify by bounding-box geometry
+            if self.num_model_classes == 1:
+                class_name = self._classify_by_geometry(box, img_h)
+            else:
+                class_name = (
+                    self.class_names[cid]
+                    if cid < len(self.class_names)
+                    else "unknown"
+                )
+            results.append({
+                "bbox": box.tolist(),
+                "confidence": float(score),
+                "class_id": int(cid),
+                "class_name": class_name,
             })
-        
-        return detections
-    
-    def _xywh2xyxy(self, boxes):
-        """Convert [x_center, y_center, w, h] to [x1, y1, x2, y2]"""
-        boxes_xyxy = boxes.copy()
-        boxes_xyxy[:, 0] = boxes[:, 0] - boxes[:, 2] / 2  # x1
-        boxes_xyxy[:, 1] = boxes[:, 1] - boxes[:, 3] / 2  # y1
-        boxes_xyxy[:, 2] = boxes[:, 0] + boxes[:, 2] / 2  # x2
-        boxes_xyxy[:, 3] = boxes[:, 1] + boxes[:, 3] / 2  # y2
-        return boxes_xyxy
-    
-    def _non_max_suppression(self, boxes, scores):
-        """Apply Non-Maximum Suppression using OpenCV"""
+        return results
+
+    # ------------------------------------------------------------------
+    @classmethod
+    def _classify_by_geometry(cls, bbox_xyxy: np.ndarray, img_h: int) -> str:
+        """Classify a detected brick by its bounding-box aspect ratio.
+
+        Works with single-class models that only detect 'lego brick'
+        without distinguishing types. Uses width/height ratio and
+        relative height to differentiate bricks from plates.
+        """
+        x1, y1, x2, y2 = bbox_xyxy
+        w = max(float(x2 - x1), 1.0)
+        h = max(float(y2 - y1), 1.0)
+        aspect = w / h
+        rel_h = h / max(img_h, 1)
+
+        for label, lo, hi, max_rh in cls._BRICK_GEOMETRY:
+            if lo <= aspect < hi and rel_h <= max_rh:
+                return label
+
+        # Fallback: generic brick
+        return "2x4 Brick"
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _xywh2xyxy(boxes: np.ndarray) -> np.ndarray:
+        out = boxes.copy()
+        out[:, 0] = boxes[:, 0] - boxes[:, 2] / 2
+        out[:, 1] = boxes[:, 1] - boxes[:, 3] / 2
+        out[:, 2] = boxes[:, 0] + boxes[:, 2] / 2
+        out[:, 3] = boxes[:, 1] + boxes[:, 3] / 2
+        return out
+
+    def _nms(self, boxes: np.ndarray, scores: np.ndarray) -> np.ndarray:
         indices = cv2.dnn.NMSBoxes(
             boxes.tolist(),
             scores.tolist(),
             score_threshold=self.conf_threshold,
-            nms_threshold=self.iou_threshold
+            nms_threshold=self.iou_threshold,
         )
-        
-        if len(indices) > 0:
-            return indices.flatten()
-        return np.array([])
-    
-    def _scale_boxes(self, boxes, scale, padding, original_shape):
-        """Scale boxes back to original image coordinates"""
+        return indices.flatten() if len(indices) > 0 else np.array([], dtype=int)
+
+    @staticmethod
+    def _rescale(boxes, scale, padding, original_hw):
         pad_w, pad_h = padding
-        
-        # Remove padding
         boxes[:, [0, 2]] -= pad_w
         boxes[:, [1, 3]] -= pad_h
-        
-        # Scale to original size
-        boxes[:, :4] /= scale
-        
-        # Clip to image boundaries
-        boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, original_shape[1])
-        boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, original_shape[0])
-        
+        boxes /= scale
+        boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, original_hw[1])
+        boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, original_hw[0])
         return boxes
-    
-    def _format_results(self, detections, image):
-        """
-        Format detections for API response
-        Compatible with existing API format
-        """
-        results = []
-        brick_counts = {}
-        
+
+    # ------------------------------------------------------------------
+    def _format(self, detections: list, image: np.ndarray) -> List[Dict]:
+        results: List[Dict] = []
+        counts: Dict[str, int] = {}
         for det in detections:
-            bbox = det['bbox']
-            class_name = det['class_name']
-            
-            # Count bricks by class
-            brick_counts[class_name] = brick_counts.get(class_name, 0) + 1
-            
-            # Extract color from ROI
-            x1, y1, x2, y2 = map(int, bbox)
-            roi = image[y1:y2, x1:x2]
-            color = self._detect_color(roi)
-            
-            # Format as API expects
-            results.append({
-                "id": f"{class_name}_{brick_counts[class_name]}",
-                "name": class_name,
-                "color": color,
-                "quantity": 1,
-                "confidence": det['confidence'],
-                "bbox": [x1, y1, int(x2-x1), int(y2-y1)]  # [x, y, w, h]
-            })
-        
+            name = det["class_name"]
+            counts[name] = counts.get(name, 0) + 1
+            x1, y1, x2, y2 = (int(v) for v in det["bbox"])
+            roi = image[max(y1, 0) : max(y2, 0), max(x1, 0) : max(x2, 0)]
+            results.append(
+                {
+                    "id": f"{name}_{counts[name]}",
+                    "name": name,
+                    "color": self._detect_colour(roi),
+                    "quantity": 1,
+                    "confidence": det["confidence"],
+                    "bbox": [x1, y1, int(x2 - x1), int(y2 - y1)],
+                }
+            )
         return results
-    
-    def _detect_color(self, roi):
-        """
-        Simple color detection from ROI using HSV
-        """
-        if roi.size == 0:
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _detect_colour(roi: np.ndarray) -> str:
+        if roi.size == 0 or roi.shape[0] < 5 or roi.shape[1] < 5:
             return "Unknown"
-        
-        # Resize ROI if too small
-        if roi.shape[0] < 10 or roi.shape[1] < 10:
-            return "Unknown"
-        
-        # Convert to HSV
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        
-        # Get mean hue value
-        mean_hue = np.mean(hsv[:, :, 0])
-        mean_sat = np.mean(hsv[:, :, 1])
-        mean_val = np.mean(hsv[:, :, 2])
-        
-        # Low saturation = grayscale colors
-        if mean_sat < 40:
-            if mean_val < 50:
-                return "Black"
-            elif mean_val > 200:
-                return "White"
-            else:
-                return "Gray"
-        
-        # Color detection based on hue
-        if mean_hue < 10 or mean_hue > 170:
+        h, s, v = (float(np.mean(hsv[:, :, c])) for c in range(3))
+
+        if s < 40:
+            return "Black" if v < 50 else ("White" if v > 200 else "Gray")
+        if h < 10 or h > 170:
             return "Red"
-        elif mean_hue < 25:
+        if h < 25:
             return "Orange"
-        elif mean_hue < 35:
+        if h < 35:
             return "Yellow"
-        elif mean_hue < 85:
+        if h < 85:
             return "Green"
-        elif mean_hue < 130:
+        if h < 130:
             return "Blue"
-        elif mean_hue < 170:
+        if h < 170:
             return "Purple"
-        
         return "Unknown"
-    
 
 
-# Usage example
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Test the detector
-    detector = BrickDetector()
-    
-    # Test with existing test image
+    det = BrickDetector()
     if os.path.exists("test_lego.jpg"):
-        print("\n🔍 Testing detection...")
-        results = detector.detect_bricks("test_lego.jpg")
-        
-        print(f"\n📊 Detected {len(results)} bricks:")
-        for brick in results:
-            print(f"   - {brick['name']} ({brick['color']}) @ {brick['confidence']:.2%}")
+        res = det.detect_bricks("test_lego.jpg")
+        print(f"Detected {len(res)} brick(s):")
+        for r in res:
+            print(f"  {r['name']} ({r['color']}) @ {r['confidence']:.0%}")
     else:
-        print("⚠️  No test image found. Place 'test_lego.jpg' in backend/ to test.")
+        print("Place test_lego.jpg in backend/ to test.")

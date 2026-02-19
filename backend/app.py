@@ -1,797 +1,736 @@
-from flask import Flask, request, jsonify, render_template
+# app.py - Lego Brick Counter API (v2.0 - Pinecone Integration)
+
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-import cv2
-import numpy as np
-import base64
-import io
-from PIL import Image
+from dotenv import load_dotenv
 import os
-from datetime import datetime
 import logging
 import time
-from werkzeug.utils import secure_filename
+from datetime import datetime, timezone
 from functools import wraps
+
+from typing import Optional
+
+from werkzeug.utils import secure_filename
+from PIL import Image
+import base64
+import io
+import numpy as np
+
 from brick_detector import BrickDetector
+from pinecone_service import PineconeService
 
-#Initialize Flask app
+# ---------------------------------------------------------------------------
+# Bootstrap
+# ---------------------------------------------------------------------------
+load_dotenv()
+
 app = Flask(__name__)
-CORS(app)  #Enable CORS for all routes
+CORS(app)
 
-#Configuration
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  #16MB max file size
-app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
+# Configuration (reads from .env with sane defaults)
+UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
+MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 16 * 1024 * 1024))
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 
-#Create upload directory if it doesn't exist
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
-#Set up logging
-logging.basicConfig(level=logging.INFO)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
 
-# Initialize ONNX detector once at startup
+# ---------------------------------------------------------------------------
+# Singletons – initialised once at startup
+# ---------------------------------------------------------------------------
+
+# ONNX Detector
+detector: Optional[BrickDetector] = None
 try:
     detector = BrickDetector(
-        model_path='best.onnx',
-        conf_threshold=0.25,
-        iou_threshold=0.45
+        model_path="best.onnx",
+        conf_threshold=0.20,
+        iou_threshold=0.45,
     )
-    logger.info("✅ Brick detector initialized successfully")
-except Exception as e:
-    logger.error(f"❌ Error initializing detector: {e}")
-    logger.warning("⚠️  API will run without detector - place best.onnx in backend/")
-    detector = None
+    logger.info("✅ Brick detector ready")
+except Exception as exc:
+    logger.warning(f"⚠️  Detector unavailable ({exc}) – place best.onnx in backend/")
 
-#HELPER FUNCTIONS
+# Pinecone
+pinecone_svc = PineconeService()
 
-def allowed_file(filename):
-    """Check if the file extension is allowed"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+# Seed the set index if Pinecone is live
+if pinecone_svc.enabled:
+    _seed_sets = [
+        {
+            "set_id": "10698",
+            "name": "Classic Creative Brick Box",
+            "total_pieces": 790,
+            "difficulty": "beginner",
+            "bricks_included": [
+                {"id": "3001", "quantity": 12, "color": "Red"},
+                {"id": "3001", "quantity": 8, "color": "Blue"},
+                {"id": "3003", "quantity": 10, "color": "Yellow"},
+                {"id": "3023", "quantity": 15, "color": "Green"},
+            ],
+            "required_bricks": ["3001", "3003", "3023", "3005"],
+        },
+        {
+            "set_id": "31134",
+            "name": "Space Rocket",
+            "total_pieces": 837,
+            "difficulty": "intermediate",
+            "bricks_included": [
+                {"id": "3001", "quantity": 15, "color": "White"},
+                {"id": "3004", "quantity": 8, "color": "Blue"},
+                {"id": "3622", "quantity": 6, "color": "Red"},
+            ],
+            "required_bricks": ["3001", "3004", "3622", "2456"],
+        },
+        {
+            "set_id": "10302",
+            "name": "Optimus Prime",
+            "total_pieces": 1508,
+            "difficulty": "advanced",
+            "bricks_included": [
+                {"id": "3001", "quantity": 20, "color": "Red"},
+                {"id": "3003", "quantity": 15, "color": "Blue"},
+                {"id": "3023", "quantity": 10, "color": "Black"},
+                {"id": "2456", "quantity": 5, "color": "Gray"},
+                {"id": "3039", "quantity": 8, "color": "Red"},
+            ],
+            "required_bricks": ["3001", "3003", "3023", "2456", "3039"],
+        },
+    ]
+    pinecone_svc.upsert_sets(_seed_sets)
 
-def handle_errors(f):
-    """Decorator for consistent error handling"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except FileNotFoundError as e:
-            logger.error(f"File error: {str(e)}")
-            return jsonify({
-                "success": False,
-                "error": "File not found",
-                "details": str(e)
-            }), 404
-        except ValueError as e:
-            logger.error(f"Validation error: {str(e)}")
-            return jsonify({
-                "success": False,
-                "error": "Invalid input",
-                "details": str(e)
-            }), 400
-        except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            return jsonify({
-                "success": False,
-                "error": "Internal server error",
-                "details": str(e)
-            }), 500
-    return decorated_function
+# ---------------------------------------------------------------------------
+# Lego part-number map (class_names.txt → official IDs)
+# ---------------------------------------------------------------------------
+LEGO_ID_MAP = {
+    "2x4 Brick": "3001",
+    "2x2 Brick": "3003",
+    "1x2 Plate": "3023",
+    "1x1 Brick": "3005",
+    "2x6 Brick": "2456",
+    "1x4 Brick": "3010",
+    "1x2 Brick": "3004",
+    "1x3 Brick": "3622",
+    "1x6 Brick": "3009",
+    "2x2 Plate": "3022",
+    "2x3 Plate": "3021",
+    "2x4 Plate": "3020",
+    "2x4 Sloped Brick": "3039",
+    "2x2 Corner Brick": "2357",
+    "lego_brick": "3001",
+    "brick": "3001",
+}
 
-def process_image_for_bricks(image_path):
-    """
-    Process image using ONNX YOLOv8 model for brick detection
-    """
-    if detector is None:
-        logger.error("Detector not initialized - model file missing")
-        return []
-    
-    try:
-        # Get raw detections from detector
-        raw_results = detector.detect_bricks(image_path)
-        logger.info(f"Raw detections: {len(raw_results)} objects")
-        
-        # Group by brick type and color for accurate counting
-        aggregated_results = aggregate_brick_detections(raw_results)
-        
-        logger.info(f"Aggregated: {len(aggregated_results)} unique brick types")
-        return aggregated_results
-        
-    except Exception as e:
-        logger.error(f"Detection error: {str(e)}")
-        return []
+# Static data for brick/set metadata endpoints
+BRICK_DB = {
+    "3001": {
+        "id": "3001",
+        "official_name": "Brick 2x4",
+        "alternate_names": ["2x4 Brick", "Basic Brick"],
+        "colors_available": ["Red", "Blue", "Yellow", "Green", "Black", "White", "Gray"],
+        "first_released": "1958",
+        "weight_g": 2.32,
+        "dimensions_mm": {"length": 31.8, "width": 15.9, "height": 9.6},
+        "sets_contained_in": ["10698", "11011", "10717"],
+        "category": "Basic Bricks",
+        "material": "ABS Plastic",
+        "description": "The classic 2x4 Lego brick, first produced in 1958.",
+    },
+    "3003": {
+        "id": "3003",
+        "official_name": "Brick 2x2",
+        "alternate_names": ["2x2 Brick"],
+        "colors_available": ["Red", "Blue", "Yellow", "Green", "Black", "White"],
+        "first_released": "1958",
+        "weight_g": 1.05,
+        "dimensions_mm": {"length": 15.9, "width": 15.9, "height": 9.6},
+        "sets_contained_in": ["10698", "11011"],
+        "category": "Basic Bricks",
+    },
+    "3023": {
+        "id": "3023",
+        "official_name": "Plate 1x2",
+        "alternate_names": ["1x2 Plate"],
+        "colors_available": ["Red", "Blue", "Yellow", "Green", "Black", "White", "Gray"],
+        "first_released": "1963",
+        "weight_g": 0.42,
+        "dimensions_mm": {"length": 15.9, "width": 7.95, "height": 3.2},
+        "sets_contained_in": ["10698", "10717"],
+        "category": "Plates",
+    },
+}
 
-def aggregate_brick_detections(raw_detections):
-    """
-    Aggregate multiple detections of the same brick type
-    Also map to Lego part numbers
-    """
+SET_DB = {
+    "10698": {
+        "set_id": "10698",
+        "name": "Classic Creative Brick Box",
+        "year": 2023,
+        "pieces": 790,
+        "minifigures": 0,
+        "age_range": "4+",
+        "theme": "Classic",
+        "price_usd": 49.99,
+        "weight_kg": 1.2,
+        "dimensions_cm": {"length": 26.2, "width": 14.1, "height": 7.1},
+        "bricks_included": [
+            {"id": "3001", "quantity": 12, "color": "Red"},
+            {"id": "3001", "quantity": 8, "color": "Blue"},
+            {"id": "3003", "quantity": 10, "color": "Yellow"},
+            {"id": "3023", "quantity": 15, "color": "Green"},
+        ],
+        "build_time_minutes": 120,
+        "difficulty": "Beginner",
+        "description": "A creative brick box with ideas for multiple builds.",
+    },
+    "31134": {
+        "set_id": "31134",
+        "name": "Space Rocket",
+        "year": 2023,
+        "pieces": 837,
+        "minifigures": 0,
+        "age_range": "7+",
+        "theme": "Space",
+        "price_usd": 59.99,
+        "bricks_included": [
+            {"id": "3001", "quantity": 15, "color": "White"},
+            {"id": "3004", "quantity": 8, "color": "Blue"},
+            {"id": "3622", "quantity": 6, "color": "Red"},
+        ],
+        "build_time_minutes": 180,
+        "difficulty": "Intermediate",
+        "description": "Build your own space rocket with detailed features.",
+    },
+}
+
+# Required-brick map used for local set suggestions
+_SET_REQUIRED = {
+    "10698": {"name": "Classic Creative Brick Box", "required": ["3001", "3003", "3023", "3005"], "pieces": 790, "difficulty": "beginner"},
+    "31134": {"name": "Space Rocket", "required": ["3001", "3004", "3622", "2456"], "pieces": 837, "difficulty": "intermediate"},
+    "10302": {"name": "Optimus Prime", "required": ["3001", "3003", "3023", "2456", "3039"], "pieces": 1508, "difficulty": "advanced"},
+}
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _allowed(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _map_brick_id(name: str) -> str:
+    name = name.strip()
+    if name in LEGO_ID_MAP:
+        return LEGO_ID_MAP[name]
+    lower = name.lower()
+    for key, val in LEGO_ID_MAP.items():
+        if key.lower() == lower:
+            return val
+    for key, val in LEGO_ID_MAP.items():
+        if key.lower() in lower or lower in key.lower():
+            return val
+    return "0000"
+
+
+def _aggregate(raw_detections: list) -> list:
+    """Group raw per-object detections into unique brick types."""
     if not raw_detections:
         return []
-    
-    # Group by brick name and color
-    brick_groups = {}
-    
-    for detection in raw_detections:
-        brick_name = detection.get('name', 'Unknown')
-        color = detection.get('color', 'Unknown')
-        
-        # Create a unique key
-        key = f"{brick_name}_{color}"
-        
-        if key in brick_groups:
-            # Increment quantity
-            brick_groups[key]['quantity'] += 1
-            # Update confidence (use highest)
-            brick_groups[key]['confidence'] = max(
-                brick_groups[key]['confidence'], 
-                detection.get('confidence', 0.5)
+    groups: dict = {}
+    for det in raw_detections:
+        name = det.get("name", "Unknown")
+        color = det.get("color", "Unknown")
+        key = f"{name}_{color}"
+        if key in groups:
+            groups[key]["quantity"] += 1
+            groups[key]["confidence"] = max(
+                groups[key]["confidence"], det.get("confidence", 0.5)
             )
         else:
-            # Map to Lego part numbers
-            brick_id = map_brick_to_lego_id(brick_name)
-            
-            brick_groups[key] = {
-                'id': brick_id,
-                'name': brick_name,
-                'color': color,
-                'quantity': 1,
-                'confidence': detection.get('confidence', 0.5),
-                'bbox': detection.get('bbox', [0, 0, 100, 100])
+            groups[key] = {
+                "id": _map_brick_id(name),
+                "name": name,
+                "color": color,
+                "quantity": 1,
+                "confidence": det.get("confidence", 0.5),
+                "bbox": det.get("bbox", [0, 0, 100, 100]),
             }
-    
-    return list(brick_groups.values())
+    return list(groups.values())
 
-def map_brick_to_lego_id(brick_name):
-    """
-    Map detected brick names to official Lego part numbers
-    This should match your class_names.txt exactly
-    """
-    # Clean the brick name
-    brick_name = brick_name.strip()
-    
-    # Complete Lego part number mapping
-    lego_id_map = {
-        # Basic bricks
-        '2x4 Brick': '3001',
-        '2x2 Brick': '3003',
-        '1x2 Plate': '3023',
-        '1x1 Brick': '3005',
-        '2x6 Brick': '2456',
-        '1x4 Brick': '3010',
-        
-        # More bricks
-        '1x2 Brick': '3004',
-        '1x3 Brick': '3622',
-        '1x6 Brick': '3009',
-        '2x2 Plate': '3022',
-        '2x3 Plate': '3021',
-        '2x4 Plate': '3020',
-        
-        # Special bricks
-        '2x4 Sloped Brick': '3039',
-        '2x2 Corner Brick': '2357',
-        
-        # Default fallbacks
-        'lego_brick': '3001',  # Generic brick
-        'Unknown': '0000',
-        'brick': '3001',
-    }
-    
-    if brick_name in lego_id_map:
-        return lego_id_map[brick_name]
-    
-    # Case-insensitive match
-    brick_name_lower = brick_name.lower()
-    for key, value in lego_id_map.items():
-        if key.lower() == brick_name_lower:
-            return value
-    
-    # Partial match
-    for key, value in lego_id_map.items():
-        if key.lower() in brick_name_lower or brick_name_lower in key.lower():
-            return value
-    
-    return '0000'  # Unknown brick
 
-def suggest_sets_from_bricks(bricks):
-    """
-    Simple set suggestion based on detected bricks
-    """
-    # Mock data - in production, query a database
-    available_sets = {
-        "10698": {
-            "name": "Classic Creative Brick Box",
-            "required_bricks": ["3001", "3003", "3023", "3005"],
-            "total_pieces": 790,
-            "difficulty": "beginner"
-        },
-        "31134": {
-            "name": "Space Rocket",
-            "required_bricks": ["3001", "3004", "3622", "2456"],
-            "total_pieces": 837,
-            "difficulty": "intermediate"
-        },
-        "10302": {
-            "name": "Optimus Prime",
-            "required_bricks": ["3001", "3003", "3023", "2456", "3039"],
-            "total_pieces": 1508,
-            "difficulty": "advanced"
-        }
-    }
-    
+def _detect_bricks(filepath: str) -> list:
+    """Run detection + aggregation on a saved image file."""
+    if detector is None:
+        return []
+    try:
+        raw = detector.detect_bricks(filepath)
+        aggregated = _aggregate(raw)
+        logger.info(f"Detection: {len(raw)} raw → {len(aggregated)} aggregated")
+        return aggregated
+    except Exception as exc:
+        logger.error(f"Detection error: {exc}")
+        return []
+
+
+def _local_suggestions(bricks: list) -> list:
+    """Fallback set suggestions when Pinecone is unavailable."""
+    brick_ids = [b.get("id") for b in bricks]
     suggestions = []
-    brick_ids = [b.get('id') for b in bricks]
-    
-    for set_id, set_info in available_sets.items():
-        required = set_info['required_bricks']
-        available = [bid for bid in brick_ids if bid in required]
-        completion = len(available) / len(required) * 100 if required else 0
-        
-        if completion > 40:  #Only suggest if we have at least 40% of required bricks
+    for sid, info in _SET_REQUIRED.items():
+        req = info["required"]
+        matched = [bid for bid in brick_ids if bid in req]
+        pct = len(matched) / len(req) * 100 if req else 0
+        if pct > 40:
             suggestions.append({
-                "set_id": set_id,
-                "name": set_info['name'],
-                "completion_percentage": round(completion),
-                "missing_pieces": len(required) - len(available),
-                "total_pieces": set_info['total_pieces'],
-                "difficulty": set_info['difficulty'],
-                "image_url": f"https://example.com/sets/{set_id}.jpg",
-                "estimated_build_time": "2-3 hours" if set_info['difficulty'] == 'beginner' else "3-4 hours"
+                "set_id": sid,
+                "name": info["name"],
+                "completion_percentage": round(pct),
+                "missing_pieces": len(req) - len(matched),
+                "total_pieces": info["pieces"],
+                "difficulty": info["difficulty"],
+                "image_url": f"https://example.com/sets/{sid}.jpg",
+                "estimated_build_time": (
+                    "2-3 hours" if info["difficulty"] == "beginner" else "3-5 hours"
+                ),
             })
-    
-    #Sort by completion percentage
-    suggestions.sort(key=lambda x: x['completion_percentage'], reverse=True)
+    suggestions.sort(key=lambda x: x["completion_percentage"], reverse=True)
     return suggestions
 
-def get_image_metadata(filepath):
-    """Get image metadata"""
+
+def _image_metadata(filepath: str) -> dict:
     try:
         with Image.open(filepath) as img:
             return {
                 "dimensions": {"width": img.width, "height": img.height},
                 "format": img.format,
                 "mode": img.mode,
-                "size_kb": os.path.getsize(filepath) / 1024
+                "size_kb": round(os.path.getsize(filepath) / 1024, 2),
             }
-    except Exception as e:
-        return {"error": f"Could not read metadata: {str(e)}"}
+    except Exception as exc:
+        return {"error": str(exc)}
 
-#API ENDPOINTS
 
-@app.route('/')
+def handle_errors(f):
+    """Unified error-handling decorator."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except FileNotFoundError as exc:
+            return jsonify({"success": False, "error": "File not found", "details": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"success": False, "error": "Invalid input", "details": str(exc)}), 400
+        except Exception as exc:
+            logger.exception("Unhandled error")
+            return jsonify({"success": False, "error": "Internal server error", "details": str(exc)}), 500
+    return wrapper
+
+
+def _save_upload(file=None, base64_data=None) -> str:
+    """Save an uploaded file or base64 payload; returns the filepath."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    if file is not None:
+        fname = f"lego_scan_{ts}_{secure_filename(file.filename)}"
+        fpath = os.path.join(UPLOAD_FOLDER, fname)
+        file.save(fpath)
+        return fpath
+
+    # base64
+    if "," in base64_data:
+        base64_data = base64_data.split(",", 1)[1]
+    img_bytes = base64.b64decode(base64_data)
+    img = Image.open(io.BytesIO(img_bytes))
+    fname = f"lego_scan_{ts}.jpg"
+    fpath = os.path.join(UPLOAD_FOLDER, fname)
+    img.save(fpath, "JPEG")
+    return fpath
+
+# ---------------------------------------------------------------------------
+# API Endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/")
 def home():
-    """Home endpoint"""
     return jsonify({
         "message": "Lego Brick Counter API",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "pinecone_enabled": pinecone_svc.enabled,
         "endpoints": {
             "upload": "/api/upload",
             "analyze-photo": "/api/analyze-photo",
             "health": "/api/health",
             "inventory": "/api/inventory",
             "recommendations": "/api/recommendations",
+            "similar": "/api/similar",
             "brick": "/api/brick/<brick_id>",
-            "set": "/api/set/<set_id>"
-        }
+            "set": "/api/set/<set_id>",
+            "pinecone-stats": "/api/pinecone/stats",
+        },
     })
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
+
+@app.route("/api/health", methods=["GET"])
+def health():
     return jsonify({
         "status": "healthy",
-        "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
-        "detector_status": "initialized" if detector else "not_available"
+        "version": "2.0.0",
+        "timestamp": _now_iso(),
+        "detector_status": "initialized" if detector else "not_available",
+        "pinecone_status": "connected" if pinecone_svc.enabled else "not_configured",
     })
 
-@app.route('/api/upload', methods=['POST'])
+
+# ---- Upload / Detect ----
+
+@app.route("/api/upload", methods=["POST"])
 @handle_errors
 def upload_image():
-    """
-    Endpoint for uploading images for brick analysis
-    Accepts both file uploads and base64 encoded images
-    """
-    #Check if request contains files
-    if 'file' in request.files:
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({
-                "success": False,
-                "error": "No file selected"
-            }), 400
-        
-        if file and allowed_file(file.filename):
-            #Save the file
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            filename = f"lego_scan_{timestamp}_{secure_filename(file.filename)}"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            
-            logger.info(f"File saved: {filepath}")
-            
-            #Process the image
-            results = process_image_for_bricks(filepath)
-            
-            return jsonify({
-                "success": True,
-                "filename": filename,
-                "bricks_detected": len(results),
-                "results": results,
-                "timestamp": datetime.utcnow().isoformat()
-            })
-        else:
+    filepath: Optional[str] = None
+
+    # Multipart file upload
+    if "file" in request.files:
+        f = request.files["file"]
+        if not f.filename or f.filename == "":
+            return jsonify({"success": False, "error": "No file selected"}), 400
+        if not _allowed(f.filename):
             return jsonify({
                 "success": False,
                 "error": "Invalid file format",
-                "details": f"Allowed formats: {', '.join(app.config['ALLOWED_EXTENSIONS'])}"
+                "details": f"Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
             }), 415
-    
-    # heck for base64 encoded image
-    elif request.json and 'image' in request.json:
-        image_data = request.json['image']
-        
-        #Remove data URL prefix if present
-        if ',' in image_data:
-            image_data = image_data.split(',')[1]
-        
-        try:
-            #Decode base64 image
-            image_bytes = base64.b64decode(image_data)
-            image = Image.open(io.BytesIO(image_bytes))
-            
-            #Save the image
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            filename = f"lego_scan_{timestamp}.jpg"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            image.save(filepath)
-            
-            logger.info(f"Base64 image saved: {filepath}")
-            
-            #Process the image
-            results = process_image_for_bricks(filepath)
-            
-            return jsonify({
-                "success": True,
-                "filename": filename,
-                "bricks_detected": len(results),
-                "results": results,
-                "timestamp": datetime.utcnow().isoformat()
-            })
-        except Exception as e:
-            return jsonify({
-                "success": False,
-                "error": "Invalid base64 image",
-                "details": str(e)
-            }), 400
-    
-    else:
-        return jsonify({
-            "success": False,
-            "error": "No file or image data provided"
-        }), 400
+        filepath = _save_upload(file=f)
 
-@app.route('/api/analyze-photo', methods=['POST'])
-@handle_errors
-def analyze_photo():
-    """
-    Enhanced photo analysis endpoint
-    Returns detailed metadata and statistics
-    """
-    start_time = time.time()
-    
-    #Check if request contains file
-    if 'file' not in request.files:
-        return jsonify({
-            "success": False,
-            "error": "No file provided"
-        }), 400
-    
-    file = request.files['file']
-    
-    #Validate file
-    if file.filename == '':
-        return jsonify({
-            "success": False,
-            "error": "No file selected"
-        }), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({
-            "success": False,
-            "error": f"File type not allowed. Allowed types: {', '.join(app.config['ALLOWED_EXTENSIONS'])}"
-        }), 415
-    
-    #Secure filename and save
-    filename = secure_filename(file.filename)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    unique_filename = f"analysis_{timestamp}_{filename}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-    file.save(filepath)
-    
-    logger.info(f"Photo analysis saved: {filepath}")
-    
-    #Get image metadata
-    image_metadata = get_image_metadata(filepath)
-    
-    #Check if detector is available
-    if detector is None:
-        return jsonify({
-            "success": False,
-            "error": "Brick detector not available",
-            "code": "DETECTOR_NOT_INITIALIZED"
-        }), 503
-    
-    #Process for bricks
-    detection_start = time.time()
-    bricks = process_image_for_bricks(filepath)
-    detection_time = (time.time() - detection_start) * 1000  #Convert to ms
-    
-    #Calculate statistics
-    color_distribution = {}
-    unique_types = set()
-    
-    for brick in bricks:
-        color = brick.get('color', 'Unknown')
-        color_distribution[color] = color_distribution.get(color, 0) + brick.get('quantity', 1)
-        unique_types.add(brick.get('id', ''))
-    
-    #Generate set suggestions based on bricks
-    suggested_sets = suggest_sets_from_bricks(bricks)
-    
-    total_time = (time.time() - start_time) * 1000
-    
+    # Base64 JSON upload
+    elif request.is_json and "image" in (request.json or {}):
+        try:
+            filepath = _save_upload(base64_data=request.json["image"])
+        except Exception as exc:
+            return jsonify({"success": False, "error": "Invalid base64 image", "details": str(exc)}), 400
+
+    else:
+        return jsonify({"success": False, "error": "No file or image data provided"}), 400
+
+    # Detect
+    bricks = _detect_bricks(filepath)
+
+    # Persist to Pinecone
+    if bricks and pinecone_svc.enabled:
+        pinecone_svc.upsert_bricks(bricks)
+
     return jsonify({
         "success": True,
-        "analysis_id": f"ana_{timestamp}",
-        "image_metadata": image_metadata,
-        "detection_summary": {
-            "total_bricks": sum(b.get('quantity', 1) for b in bricks),
-            "unique_types": len(unique_types),
-            "detection_time_ms": round(detection_time, 2),
-            "total_processing_time_ms": round(total_time, 2)
-        },
-        "bricks": bricks,
-        "color_distribution": color_distribution,
-        "suggested_sets": suggested_sets[:5],  # Top 5
-        "timestamp": datetime.utcnow().isoformat()
+        "filename": os.path.basename(filepath),
+        "bricks_detected": len(bricks),
+        "results": bricks,
+        "pinecone_synced": pinecone_svc.enabled,
+        "timestamp": _now_iso(),
     })
 
-@app.route('/api/inventory', methods=['GET', 'POST', 'PUT', 'DELETE'])
+
+@app.route("/api/analyze-photo", methods=["POST"])
+@handle_errors
+def analyze_photo():
+    t0 = time.time()
+
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No file provided"}), 400
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"success": False, "error": "No file selected"}), 400
+    if not _allowed(f.filename):
+        return jsonify({"success": False, "error": f"Allowed: {', '.join(ALLOWED_EXTENSIONS)}"}), 415
+
+    filepath = _save_upload(file=f)
+    meta = _image_metadata(filepath)
+
+    if detector is None:
+        return jsonify({"success": False, "error": "Detector not available", "code": "DETECTOR_NOT_INITIALIZED"}), 503
+
+    t_det = time.time()
+    bricks = _detect_bricks(filepath)
+    det_ms = (time.time() - t_det) * 1000
+
+    # Persist
+    if bricks and pinecone_svc.enabled:
+        pinecone_svc.upsert_bricks(bricks)
+
+    # Colour distribution
+    color_dist: dict = {}
+    unique_ids: set = set()
+    for b in bricks:
+        color_dist[b["color"]] = color_dist.get(b["color"], 0) + b.get("quantity", 1)
+        unique_ids.add(b["id"])
+
+    # Recommendations (Pinecone first, local fallback)
+    if pinecone_svc.enabled:
+        suggestions = pinecone_svc.recommend_sets(bricks, top_k=5)
+    else:
+        suggestions = _local_suggestions(bricks)
+
+    ts_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    total_ms = (time.time() - t0) * 1000
+
+    return jsonify({
+        "success": True,
+        "analysis_id": f"ana_{ts_str}",
+        "image_metadata": meta,
+        "detection_summary": {
+            "total_bricks": sum(b.get("quantity", 1) for b in bricks),
+            "unique_types": len(unique_ids),
+            "detection_time_ms": round(det_ms, 2),
+            "total_processing_time_ms": round(total_ms, 2),
+        },
+        "bricks": bricks,
+        "color_distribution": color_dist,
+        "suggested_sets": suggestions[:5],
+        "pinecone_synced": pinecone_svc.enabled,
+        "timestamp": _now_iso(),
+    })
+
+
+# ---- Similarity Search (NEW) ----
+
+@app.route("/api/similar", methods=["POST"])
+@handle_errors
+def find_similar():
+    """Find similar bricks using Pinecone vector search."""
+    data = request.json or {}
+    brick = data.get("brick")
+    if not brick:
+        return jsonify({"success": False, "error": "Provide a 'brick' object"}), 400
+
+    top_k = min(data.get("top_k", 5), 20)
+
+    if not pinecone_svc.enabled:
+        return jsonify({"success": False, "error": "Pinecone not configured", "code": "PINECONE_DISABLED"}), 503
+
+    results = pinecone_svc.find_similar_bricks(brick, top_k=top_k)
+    return jsonify({"success": True, "similar_bricks": results})
+
+
+# ---- Inventory ----
+
+@app.route("/api/inventory", methods=["GET", "POST", "PUT", "DELETE"])
 @handle_errors
 def manage_inventory():
-    """Complete inventory management with CRUD operations"""
-    
-    #Mock inventory data (in production, use a database)
-    mock_inventory = [
-        {"id": "3001", "name": "2x4 Brick", "color": "Red", "quantity": 15, "last_updated": "2024-01-15T10:30:00Z"},
-        {"id": "3003", "name": "2x2 Brick", "color": "Blue", "quantity": 12, "last_updated": "2024-01-15T10:30:00Z"},
-        {"id": "3023", "name": "1x2 Plate", "color": "Yellow", "quantity": 20, "last_updated": "2024-01-15T10:30:00Z"},
-        {"id": "3005", "name": "1x1 Brick", "color": "Green", "quantity": 8, "last_updated": "2024-01-15T10:30:00Z"},
-        {"id": "2456", "name": "2x6 Brick", "color": "Black", "quantity": 3, "last_updated": "2024-01-15T10:30:00Z"},
-    ]
-    
-    if request.method == 'GET':
-        #Get inventory with optional filtering
-        color_filter = request.args.get('color')
-        min_quantity = request.args.get('min_quantity', type=int)
-        limit = request.args.get('limit', 50, type=int)
-        
-        #Apply filters
-        filtered = mock_inventory
+    user_id = request.headers.get("X-User-Id", "default_user")
+
+    # ---- GET ----
+    if request.method == "GET":
+        # Try Pinecone first
+        if pinecone_svc.enabled:
+            items = pinecone_svc.get_inventory(user_id)
+            if items:
+                return jsonify({
+                    "success": True,
+                    "count": len(items),
+                    "inventory": items,
+                    "source": "pinecone",
+                    "summary": {
+                        "total_bricks": sum(i.get("quantity", 1) for i in items),
+                        "unique_colors": len({i.get("color") for i in items}),
+                        "unique_types": len({i.get("brick_id") for i in items}),
+                    },
+                })
+
+        # Local fallback
+        mock = [
+            {"id": "3001", "name": "2x4 Brick", "color": "Red", "quantity": 15, "last_updated": "2024-01-15T10:30:00Z"},
+            {"id": "3003", "name": "2x2 Brick", "color": "Blue", "quantity": 12, "last_updated": "2024-01-15T10:30:00Z"},
+            {"id": "3023", "name": "1x2 Plate", "color": "Yellow", "quantity": 20, "last_updated": "2024-01-15T10:30:00Z"},
+            {"id": "3005", "name": "1x1 Brick", "color": "Green", "quantity": 8, "last_updated": "2024-01-15T10:30:00Z"},
+            {"id": "2456", "name": "2x6 Brick", "color": "Black", "quantity": 3, "last_updated": "2024-01-15T10:30:00Z"},
+        ]
+        color_filter = request.args.get("color")
+        min_qty = request.args.get("min_quantity", type=int)
+        limit = request.args.get("limit", 50, type=int)
+        filtered = mock
         if color_filter:
-            filtered = [item for item in filtered if item['color'].lower() == color_filter.lower()]
-        if min_quantity:
-            filtered = [item for item in filtered if item['quantity'] >= min_quantity]
-        
-        #Apply limit
+            filtered = [i for i in filtered if i["color"].lower() == color_filter.lower()]
+        if min_qty:
+            filtered = [i for i in filtered if i["quantity"] >= min_qty]
         filtered = filtered[:limit]
-        
         return jsonify({
             "success": True,
             "count": len(filtered),
             "inventory": filtered,
+            "source": "local",
             "summary": {
-                "total_bricks": sum(item['quantity'] for item in filtered),
-                "unique_colors": len(set(item['color'] for item in filtered)),
-                "unique_types": len(set(item['id'] for item in filtered))
-            }
+                "total_bricks": sum(i["quantity"] for i in filtered),
+                "unique_colors": len({i["color"] for i in filtered}),
+                "unique_types": len({i["id"] for i in filtered}),
+            },
         })
-    
-    elif request.method == 'POST':
-        #Add bricks to inventory
-        data = request.json
-        
-        if not data or 'bricks' not in data:
-            return jsonify({
-                "success": False,
-                "error": "No bricks provided"
-            }), 400
-        
-        bricks = data['bricks']
-        if not isinstance(bricks, list):
-            return jsonify({
-                "success": False,
-                "error": "Bricks must be an array"
-            }), 400
-        
-        #Validate each brick
-        for brick in bricks:
-            if not all(k in brick for k in ['id', 'name', 'quantity']):
-                return jsonify({
-                    "success": False,
-                    "error": "Each brick must have id, name, and quantity"
-                }), 400
-        
-        #In production: Add to database
-        added_count = len(bricks)
-        
+
+    # ---- POST ----
+    if request.method == "POST":
+        data = request.json or {}
+        bricks = data.get("bricks")
+        if not bricks or not isinstance(bricks, list):
+            return jsonify({"success": False, "error": "Provide a 'bricks' array"}), 400
+        for b in bricks:
+            if not all(k in b for k in ("id", "name", "quantity")):
+                return jsonify({"success": False, "error": "Each brick needs id, name, quantity"}), 400
+
+        synced = False
+        if pinecone_svc.enabled:
+            synced = pinecone_svc.save_inventory(user_id, bricks)
+
         return jsonify({
             "success": True,
-            "message": f"Added {added_count} brick(s) to inventory",
+            "message": f"Added {len(bricks)} brick(s) to inventory",
             "added": bricks,
-            "timestamp": datetime.utcnow().isoformat()
+            "pinecone_synced": synced,
+            "timestamp": _now_iso(),
         })
-    
-    elif request.method == 'PUT':
-        #Update brick quantities in inventory
-        data = request.json
-        
-        if not data or 'updates' not in data:
+
+    # ---- PUT ----
+    if request.method == "PUT":
+        data = request.json or {}
+        updates = data.get("updates")
+        if not updates:
+            return jsonify({"success": False, "error": "Provide 'updates' array"}), 400
+        return jsonify({
+            "success": True,
+            "message": f"Updated {len(updates)} brick(s)",
+            "updates": updates,
+        })
+
+    # ---- DELETE ----
+    if request.method == "DELETE":
+        brick_ids = request.args.getlist("brick_id")
+        if brick_ids:
+            return jsonify({
+                "success": True,
+                "message": f"Deleted {len(brick_ids)} brick type(s)",
+                "deleted_ids": brick_ids,
+            })
+        confirm = request.args.get("confirm", "").lower() == "true"
+        if not confirm:
             return jsonify({
                 "success": False,
-                "error": "No updates provided"
+                "error": "Add ?confirm=true to clear all inventory",
+                "warning": "This deletes ALL inventory data",
             }), 400
-        
-        updates = data['updates']
-        
-        #In production: Update database
-        updated_count = len(updates)
-        
-        return jsonify({
-            "success": True,
-            "message": f"Updated {updated_count} brick(s)",
-            "updates": updates
-        })
-    
-    elif request.method == 'DELETE':
-        #Clear entire inventory or specific bricks
-        brick_ids = request.args.getlist('brick_id')
-        
-        if brick_ids:
-            #Delete specific bricks
-            deleted_count = len(brick_ids)
-            return jsonify({
-                "success": True,
-                "message": f"Deleted {deleted_count} brick type(s) from inventory",
-                "deleted_ids": brick_ids
-            })
-        else:
-            #Clear entire inventory
-            confirmation = request.args.get('confirm', '').lower() == 'true'
-            
-            if not confirmation:
-                return jsonify({
-                    "success": False,
-                    "error": "Confirmation required. Add ?confirm=true to clear inventory",
-                    "warning": "This will delete ALL inventory data"
-                }), 400
-            
-            return jsonify({
-                "success": True,
-                "message": "Inventory cleared successfully"
-            })
+        if pinecone_svc.enabled:
+            pinecone_svc.clear_inventory(user_id)
+        return jsonify({"success": True, "message": "Inventory cleared"})
 
-@app.route('/api/recommendations', methods=['GET'])
+
+# ---- Recommendations ----
+
+@app.route("/api/recommendations", methods=["GET"])
 @handle_errors
-def get_recommendations():
-    """Get Lego set recommendations based on current inventory"""
-    
-    limit = request.args.get('limit', 5, type=int)
-    limit = min(limit, 20)  #Max 20 recommendations
-    
-    #Mock recommendations (in production, generate based on inventory)
-    mock_recommendations = [
-        {
-            "set_id": "10698",
-            "name": "Classic Creative Brick Box",
-            "completion_percentage": 85,
-            "missing_pieces": 12,
-            "total_pieces": 790,
-            "image_url": "https://example.com/sets/10698.jpg",
-            "estimated_build_time": "2-3 hours",
-            "difficulty": "beginner"
-        },
-        {
-            "set_id": "31134",
-            "name": "Space Rocket",
-            "completion_percentage": 72,
-            "missing_pieces": 23,
-            "total_pieces": 837,
-            "image_url": "https://example.com/sets/31134.jpg",
-            "estimated_build_time": "3-4 hours",
-            "difficulty": "intermediate"
-        },
-        {
-            "set_id": "10302",
-            "name": "Optimus Prime",
-            "completion_percentage": 45,
-            "missing_pieces": 56,
-            "total_pieces": 1508,
-            "image_url": "https://example.com/sets/10302.jpg",
-            "estimated_build_time": "5-6 hours",
-            "difficulty": "advanced"
-        }
+def recommendations():
+    limit = min(request.args.get("limit", 5, type=int), 20)
+
+    # If Pinecone has inventory, use vector-based recommendations
+    if pinecone_svc.enabled:
+        user_id = request.headers.get("X-User-Id", "default_user")
+        inv = pinecone_svc.get_inventory(user_id)
+        if inv:
+            recs = pinecone_svc.recommend_sets(inv, top_k=limit)
+            if recs:
+                return jsonify({"recommendations": recs, "source": "pinecone"})
+
+    # Local fallback
+    fallback = [
+        {"set_id": "10698", "name": "Classic Creative Brick Box", "completion_percentage": 85, "missing_pieces": 12, "total_pieces": 790, "difficulty": "beginner", "image_url": "https://example.com/sets/10698.jpg", "estimated_build_time": "2-3 hours"},
+        {"set_id": "31134", "name": "Space Rocket", "completion_percentage": 72, "missing_pieces": 23, "total_pieces": 837, "difficulty": "intermediate", "image_url": "https://example.com/sets/31134.jpg", "estimated_build_time": "3-4 hours"},
+        {"set_id": "10302", "name": "Optimus Prime", "completion_percentage": 45, "missing_pieces": 56, "total_pieces": 1508, "difficulty": "advanced", "image_url": "https://example.com/sets/10302.jpg", "estimated_build_time": "5-6 hours"},
     ]
-    
-    return jsonify({
-        "recommendations": mock_recommendations[:limit]
-    })
+    return jsonify({"recommendations": fallback[:limit], "source": "local"})
 
-@app.route('/api/brick/<brick_id>', methods=['GET'])
+
+# ---- Metadata Lookups ----
+
+@app.route("/api/brick/<brick_id>", methods=["GET"])
 @handle_errors
-def get_brick_metadata(brick_id):
-    """Get detailed metadata for a specific brick"""
-    
-    #Mock data - in production, query a database
-    brick_database = {
-        "3001": {
-            "id": "3001",
-            "official_name": "Brick 2x4",
-            "alternate_names": ["2x4 Brick", "Basic Brick"],
-            "colors_available": ["Red", "Blue", "Yellow", "Green", "Black", "White", "Gray"],
-            "first_released": "1958",
-            "weight_g": 2.32,
-            "dimensions_mm": {"length": 31.8, "width": 15.9, "height": 9.6},
-            "sets_contained_in": ["10698", "11011", "10717"],
-            "category": "Basic Bricks",
-            "material": "ABS Plastic",
-            "description": "The classic 2x4 Lego brick, first produced in 1958."
-        },
-        "3003": {
-            "id": "3003",
-            "official_name": "Brick 2x2",
-            "alternate_names": ["2x2 Brick"],
-            "colors_available": ["Red", "Blue", "Yellow", "Green", "Black", "White"],
-            "first_released": "1958",
-            "weight_g": 1.05,
-            "dimensions_mm": {"length": 15.9, "width": 15.9, "height": 9.6},
-            "sets_contained_in": ["10698", "11011"],
-            "category": "Basic Bricks"
-        },
-        "3023": {
-            "id": "3023",
-            "official_name": "Plate 1x2",
-            "alternate_names": ["1x2 Plate"],
-            "colors_available": ["Red", "Blue", "Yellow", "Green", "Black", "White", "Gray"],
-            "first_released": "1963",
-            "weight_g": 0.42,
-            "dimensions_mm": {"length": 15.9, "width": 7.95, "height": 3.2},
-            "sets_contained_in": ["10698", "10717"],
-            "category": "Plates"
-        }
-    }
-    
-    if brick_id in brick_database:
-        return jsonify({
-            "success": True,
-            "brick": brick_database[brick_id]
-        })
-    else:
-        return jsonify({
-            "success": False,
-            "error": f"Brick ID '{brick_id}' not found"
-        }), 404
+def brick_metadata(brick_id):
+    if brick_id in BRICK_DB:
+        return jsonify({"success": True, "brick": BRICK_DB[brick_id]})
 
-@app.route('/api/set/<set_id>', methods=['GET'])
+    # Try Pinecone similarity as a fallback
+    if pinecone_svc.enabled:
+        results = pinecone_svc.find_similar_bricks({"id": brick_id, "name": brick_id}, top_k=1)
+        if results:
+            return jsonify({"success": True, "brick": results[0], "source": "pinecone_similar"})
+
+    return jsonify({"success": False, "error": f"Brick ID '{brick_id}' not found"}), 404
+
+
+@app.route("/api/set/<set_id>", methods=["GET"])
 @handle_errors
-def get_set_metadata(set_id):
-    """Get detailed metadata for a Lego set"""
-    
-    #Mock data - in production, query a database
-    set_database = {
-        "10698": {
-            "set_id": "10698",
-            "name": "Classic Creative Brick Box",
-            "year": 2023,
-            "pieces": 790,
-            "minifigures": 0,
-            "age_range": "4+",
-            "theme": "Classic",
-            "price_usd": 49.99,
-            "weight_kg": 1.2,
-            "dimensions_cm": {"length": 26.2, "width": 14.1, "height": 7.1},
-            "bricks_included": [
-                {"id": "3001", "quantity": 12, "color": "Red"},
-                {"id": "3001", "quantity": 8, "color": "Blue"},
-                {"id": "3003", "quantity": 10, "color": "Yellow"},
-                {"id": "3023", "quantity": 15, "color": "Green"}
-            ],
-            "build_time_minutes": 120,
-            "difficulty": "Beginner",
-            "description": "A creative brick box with ideas for multiple builds."
-        },
-        "31134": {
-            "set_id": "31134",
-            "name": "Space Rocket",
-            "year": 2023,
-            "pieces": 837,
-            "minifigures": 0,
-            "age_range": "7+",
-            "theme": "Space",
-            "price_usd": 59.99,
-            "bricks_included": [
-                {"id": "3001", "quantity": 15, "color": "White"},
-                {"id": "3004", "quantity": 8, "color": "Blue"},
-                {"id": "3622", "quantity": 6, "color": "Red"}
-            ],
-            "build_time_minutes": 180,
-            "difficulty": "Intermediate",
-            "description": "Build your own space rocket with detailed features."
-        }
-    }
-    
-    if set_id in set_database:
-        return jsonify({
-            "success": True,
-            "set": set_database[set_id]
-        })
-    else:
-        return jsonify({
-            "success": False,
-            "error": f"Set ID '{set_id}' not found"
-        }), 404
+def set_metadata(set_id):
+    if set_id in SET_DB:
+        return jsonify({"success": True, "set": SET_DB[set_id]})
+    return jsonify({"success": False, "error": f"Set ID '{set_id}' not found"}), 404
 
-@app.route('/api/version', methods=['GET'])
-def get_version():
-    """Get API version information"""
+
+# ---- Pinecone Stats (NEW) ----
+
+@app.route("/api/pinecone/stats", methods=["GET"])
+@handle_errors
+def pinecone_stats():
+    stats = pinecone_svc.get_stats()
+    return jsonify({"success": True, "pinecone": stats})
+
+
+@app.route("/api/version", methods=["GET"])
+def version():
     return jsonify({
         "api_name": "Lego Brick Counter API",
-        "version": "1.0.0",
-        "build_date": "2024-01-15",
+        "version": "2.0.0",
+        "build_date": "2026-02-19",
+        "detector_status": "initialized" if detector else "not_available",
+        "pinecone_status": "connected" if pinecone_svc.enabled else "not_configured",
         "endpoints": [
             "/api/health",
             "/api/upload",
             "/api/analyze-photo",
+            "/api/similar",
             "/api/inventory",
             "/api/recommendations",
             "/api/brick/{id}",
             "/api/set/{id}",
-            "/api/version"
+            "/api/pinecone/stats",
+            "/api/version",
         ],
-        "detector_status": "initialized" if detector else "not_available"
     })
 
-#ERROR HANDLERS
+
+# ---------------------------------------------------------------------------
+# Error Handlers
+# ---------------------------------------------------------------------------
 
 @app.errorhandler(413)
 def too_large(e):
-    return jsonify({
-        "success": False,
-        "error": "File too large",
-        "details": "Image exceeds 16MB limit",
-        "code": "FILE_TOO_LARGE"
-    }), 413
+    return jsonify({"success": False, "error": "File too large", "details": "Max 16 MB", "code": "FILE_TOO_LARGE"}), 413
 
 @app.errorhandler(404)
 def not_found(e):
-    return jsonify({
-        "success": False,
-        "error": "Endpoint not found",
-        "details": str(e)
-    }), 404
+    return jsonify({"success": False, "error": "Endpoint not found", "details": str(e)}), 404
 
 @app.errorhandler(500)
 def internal_error(e):
-    return jsonify({
-        "success": False,
-        "error": "Internal server error",
-        "details": str(e),
-        "code": "INTERNAL_ERROR"
-    }), 500
+    return jsonify({"success": False, "error": "Internal server error", "details": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)

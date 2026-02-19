@@ -3,7 +3,7 @@ description: "Lego Brick Counter and Sorter App - Multi-platform"
 
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 2.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -13,9 +13,7 @@ dependencies:
     sdk: flutter
   http: ^1.1.0
   image_picker: ^1.0.4
-  image_picker_for_web: ^3.0.0  # Web-specific version
-  universal_io: ^2.2.2  # For platform-agnostic IO
-  universal_platform: ^1.0.0  # For platform detection
+  image_picker_for_web: ^3.0.0
   cupertino_icons: ^1.0.2
 
 dev_dependencies:

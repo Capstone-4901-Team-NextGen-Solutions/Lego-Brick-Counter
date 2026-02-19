@@ -1,5 +1,5 @@
 -------------------------------------
-Lego Brick Counter/Sorter
+Lego Brick Counter/Sorter  v2.0
 -------------------------------------
 
 Description: A system that identifies, classifies, and counts Lego bricks from images or camera
