@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
+import 'services/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
+import 'package:provider/provider.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize auth service
+  final auth = AuthService();
+  await auth.init();
+  
   runApp(const LegoApp());
 }
 
@@ -12,41 +20,46 @@ class LegoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Lego Brick Counter',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+    return ChangeNotifierProvider(
+      create: (_) => AuthService(),
+      child: MaterialApp(
+        title: 'Lego Brick Counter',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        home: const AuthGate(),
       ),
-      home: const AuthGate(),
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Auth
+// Auth Gate (uses Provider instead of ValueListenable)
 // ---------------------------------------------------------------------------
-
-class AuthService {
-  static final ValueNotifier<bool> loggedIn = ValueNotifier(false);
-  static bool get isLoggedIn => loggedIn.value;
-  static void login() => loggedIn.value = true;
-  static void logout() => loggedIn.value = false;
-}
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: AuthService.loggedIn,
-      builder: (context, isLoggedIn, _) =>
-          isLoggedIn ? const HomeScreen() : const AuthPage(),
+    return Consumer<AuthService>(
+      builder: (context, auth, _) {
+        if (auth.isLoading) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return auth.isLoggedIn ? const HomeScreen() : const AuthPage();
+      },
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Auth Page (updated to use AuthService)
+// ---------------------------------------------------------------------------
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -56,26 +69,62 @@ class AuthPage extends StatefulWidget {
 
 class _AuthPageState extends State<AuthPage> {
   bool isLogin = true;
+  bool _isLoading = false;
   final _email = TextEditingController();
   final _pass = TextEditingController();
   final _confirm = TextEditingController();
+  final _username = TextEditingController();
 
   @override
   void dispose() {
     _email.dispose();
     _pass.dispose();
     _confirm.dispose();
+    _username.dispose();
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!isLogin && _pass.text.trim() != _confirm.text.trim()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Passwords do not match')),
       );
       return;
     }
-    AuthService.login();
+
+    setState(() => _isLoading = true);
+
+    final auth = Provider.of<AuthService>(context, listen: false);
+    Map<String, dynamic> result;
+
+    if (isLogin) {
+      result = await auth.login(
+        email: _email.text.trim(),
+        password: _pass.text.trim(),
+      );
+    } else {
+      result = await auth.register(
+        email: _email.text.trim(),
+        password: _pass.text.trim(),
+        username: _username.text.isNotEmpty ? _username.text.trim() : null,
+      );
+    }
+
+    setState(() => _isLoading = false);
+
+    if (result['success']) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? 'Success!')),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['error'] ?? 'Authentication failed')),
+        );
+      }
+    }
   }
 
   @override
@@ -97,37 +146,63 @@ class _AuthPageState extends State<AuthPage> {
                         fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 24),
+                  if (!isLogin) ...[
+                    TextField(
+                      controller: _username,
+                      decoration: const InputDecoration(
+                        labelText: 'Username (optional)',
+                        prefixIcon: Icon(Icons.person),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   TextField(
                       controller: _email,
-                      decoration:
-                          const InputDecoration(labelText: 'Email')),
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.email),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                  ),
                   const SizedBox(height: 16),
                   TextField(
                       controller: _pass,
                       obscureText: true,
-                      decoration:
-                          const InputDecoration(labelText: 'Password')),
+                      decoration: const InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: Icon(Icons.lock),
+                      ),
+                  ),
                   if (!isLogin) ...[
                     const SizedBox(height: 16),
                     TextField(
                         controller: _confirm,
                         obscureText: true,
                         decoration: const InputDecoration(
-                            labelText: 'Confirm Password')),
+                          labelText: 'Confirm Password',
+                          prefixIcon: Icon(Icons.lock_outline),
+                        )),
                   ],
                   const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 48),
+                  if (_isLoading)
+                    const CircularProgressIndicator()
+                  else
+                    ElevatedButton(
+                      onPressed: _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                      child: Text(isLogin ? 'Login' : 'Register'),
                     ),
-                    child: Text(isLogin ? 'Login' : 'Register'),
-                  ),
                   const SizedBox(height: 12),
                   TextButton(
-                    onPressed: () => setState(() => isLogin = !isLogin),
+                    onPressed: () {
+                      if (!_isLoading) {
+                        setState(() => isLogin = !isLogin);
+                      }
+                    },
                     child: Text(isLogin
                         ? 'New here? Create an account'
                         : 'Already have an account? Login'),
@@ -143,7 +218,7 @@ class _AuthPageState extends State<AuthPage> {
 }
 
 // ---------------------------------------------------------------------------
-// Home
+// Home Screen (unchanged)
 // ---------------------------------------------------------------------------
 
 class HomeScreen extends StatefulWidget {
@@ -190,7 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Scan Screen
+// Scan Screen (unchanged, but will now use authenticated API calls)
 // ---------------------------------------------------------------------------
 
 class ScanScreen extends StatefulWidget {
@@ -278,6 +353,9 @@ class _ScanScreenState extends State<ScanScreen>
         });
         _animCtrl.forward(from: 0);
 
+        // Optionally add to inventory
+        _showAddToInventoryDialog();
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Row(children: [
@@ -300,6 +378,41 @@ class _ScanScreenState extends State<ScanScreen>
     } finally {
       setState(() => _isProcessing = false);
     }
+  }
+
+  void _showAddToInventoryDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add to Inventory?'),
+        content: Text('Add ${_scannedBricks.length} detected bricks to your inventory?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final bricks = _scannedBricks.map((b) => {
+                'id': b.id,
+                'name': b.name,
+                'color': b.color.toString().split('.').last,
+                'quantity': b.quantity,
+              }).toList();
+              
+              final result = await ApiService.addToInventory(bricks);
+              if (result['success'] == true && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Added to inventory!')),
+                );
+              }
+            },
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
   }
 
   Color _parseColor(String name) {
@@ -613,7 +726,7 @@ class _ScanScreenState extends State<ScanScreen>
 }
 
 // ---------------------------------------------------------------------------
-// Inventory Screen — loads from API
+// Inventory Screen (updated to use authenticated API)
 // ---------------------------------------------------------------------------
 
 class InventoryScreen extends StatefulWidget {
@@ -758,7 +871,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Recommendations Screen — loads from API
+// Recommendations Screen (unchanged)
 // ---------------------------------------------------------------------------
 
 class RecommendationsScreen extends StatefulWidget {
@@ -857,7 +970,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Profile Screen — shows Pinecone status
+// Profile Screen (updated with logout and user info)
 // ---------------------------------------------------------------------------
 
 class ProfileScreen extends StatefulWidget {
@@ -869,11 +982,13 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   String _backendStatus = 'checking…';
   String _pineconeStatus = 'checking…';
+  Map<String, dynamic>? _userProfile;
 
   @override
   void initState() {
     super.initState();
     _checkStatus();
+    _loadProfile();
   }
 
   Future<void> _checkStatus() async {
@@ -884,8 +999,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  Future<void> _loadProfile() async {
+    final profile = await ApiService.getProfile();
+    if (profile['success'] == true) {
+      setState(() {
+        _userProfile = profile['user'];
+      });
+    }
+  }
+
+  Future<void> _logout() async {
+    final auth = Provider.of<AuthService>(context, listen: false);
+    await auth.logout();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = Provider.of<AuthService>(context);
+    final username = _userProfile?['username'] ?? auth.user?['username'] ?? 'Lego Enthusiast';
+    final email = _userProfile?['email'] ?? auth.user?['email'] ?? '';
+    final stats = _userProfile?['stats'] ?? {};
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(children: [
@@ -899,9 +1033,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   backgroundColor: Colors.red,
                   child: Icon(Icons.person, size: 40, color: Colors.white)),
               const SizedBox(height: 16),
-              const Text('Lego Enthusiast',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
+              Text(username,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(email,
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _stat('Scans', '${stats['total_scans'] ?? 0}'),
+                  _stat('Inventory', '${stats['total_inventory_items'] ?? 0}'),
+                  _stat('Favorites', '${stats['favorite_sets'] ?? 0}'),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text('Backend: $_backendStatus',
                   style: TextStyle(color: Colors.grey[600], fontSize: 12)),
               Text('Pinecone: $_pineconeStatus',
@@ -912,24 +1057,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 16),
         Expanded(
           child: ListView(children: [
-            _profileTile(Icons.history, 'Scan History', () {}),
-            _profileTile(Icons.favorite, 'Favorite Sets', () {}),
-            _profileTile(Icons.settings, 'Settings', () {}),
-            _profileTile(Icons.help, 'Help & Support', () {}),
-            _profileTile(Icons.info, 'About', () {}),
-            _profileTile(Icons.logout, 'Logout', AuthService.logout),
+            _profileTile(Icons.history, 'Scan History', () {
+              // Navigate to scan history
+            }),
+            _profileTile(Icons.favorite, 'Favorite Sets', () {
+              // Navigate to favorites
+            }),
+            _profileTile(Icons.settings, 'Settings', () {
+              // Navigate to settings
+            }),
+            _profileTile(Icons.help, 'Help & Support', () {
+              // Navigate to help
+            }),
+            _profileTile(Icons.info, 'About', () {
+              // Navigate to about
+            }),
+            _profileTile(Icons.logout, 'Logout', _logout, color: Colors.red),
           ]),
         ),
       ]),
     );
   }
 
-  Widget _profileTile(IconData icon, String title, VoidCallback onTap) {
+  Widget _stat(String label, String value) => Column(children: [
+        Text(value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ]);
+
+  Widget _profileTile(IconData icon, String title, VoidCallback onTap, {Color? color}) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
+        leading: Icon(icon, color: color),
+        title: Text(title, style: color != null ? TextStyle(color: color) : null),
         trailing: const Icon(Icons.arrow_forward_ios),
         onTap: onTap,
       ),
