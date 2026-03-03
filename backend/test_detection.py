@@ -11,22 +11,22 @@ import sys
 
 def main():
     print("=" * 50)
-    print("🧱 LEGO BRICK DETECTOR TEST")
+    print("LEGO BRICK DETECTOR TEST")
     print("=" * 50)
     
     # Initialize detector
     try:
-        print("\n🔄 Initializing detector...")
+        print("\nInitializing detector...")
         detector = BrickDetector('best.onnx')
-        print("✅ Detector initialized\n")
+        print("Detector initialized\n")
     except FileNotFoundError as e:
-        print(f"❌ Failed to initialize: {e}")
-        print("\n💡 Make sure to:")
+        print(f"Failed to initialize: {e}")
+        print("\nMake sure to:")
         print("   1. Place your best.onnx model in backend/")
         print("   2. Run: pip install -r requirements.txt")
         return
     except Exception as e:
-        print(f"❌ Failed to initialize: {e}")
+        print(f"Failed to initialize: {e}")
         import traceback
         traceback.print_exc()
         return
@@ -41,9 +41,9 @@ def main():
             break
     
     if not test_image:
-        print("❌ No test image found!")
+        print("No test image found!")
         print("   Place 'test_lego.jpg' in backend/ directory")
-        print("\n💡 Or specify an image:")
+        print("\nOr specify an image:")
         print(f"   python {sys.argv[0]} path/to/your/image.jpg")
         return
     
@@ -51,21 +51,21 @@ def main():
     if len(sys.argv) > 1:
         test_image = sys.argv[1]
         if not os.path.exists(test_image):
-            print(f"❌ Image not found: {test_image}")
+            print(f"Image not found: {test_image}")
             return
     
-    print(f"🔍 Testing with: {test_image}\n")
+    print(f"Testing with: {test_image}\n")
     
     # Run detection
     try:
         results = detector.detect_bricks(test_image)
         
-        print(f"📊 RESULTS:")
+        print(f"RESULTS:")
         print(f"   Detected: {len(results)} bricks\n")
         
         if len(results) == 0:
-            print("   ⚠️  No bricks detected!")
-            print("\n💡 Troubleshooting:")
+            print("   No bricks detected!")
+            print("\nTroubleshooting:")
             print("   - Try lowering confidence threshold:")
             print("     detector = BrickDetector(conf_threshold=0.15)")
             print("   - Check if image contains LEGO bricks")
@@ -80,11 +80,11 @@ def main():
                 print()
         
         # Visualize
-        print("🎨 Creating visualization...")
+        print("Creating visualization...")
         visualize_detections(test_image, results)
         
     except Exception as e:
-        print(f"❌ Detection failed: {e}")
+        print(f"Detection failed: {e}")
         import traceback
         traceback.print_exc()
 
@@ -93,7 +93,7 @@ def visualize_detections(image_path, detections):
     img = cv2.imread(image_path)
     
     if img is None:
-        print(f"❌ Could not read image: {image_path}")
+        print(f"Could not read image: {image_path}")
         return
     
     for det in detections:
@@ -117,8 +117,8 @@ def visualize_detections(image_path, detections):
     # Save result
     output_path = 'detection_result.jpg'
     cv2.imwrite(output_path, img)
-    print(f"💾 Visualization saved: {output_path}\n")
-    print("✅ Test complete!")
+    print(f"Visualization saved: {output_path}\n")
+    print("Test complete!")
 
 if __name__ == "__main__":
     main()

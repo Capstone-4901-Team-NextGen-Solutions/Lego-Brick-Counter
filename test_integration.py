@@ -21,13 +21,13 @@ class Colors:
     RESET = '\033[0m'
 
 def print_success(msg):
-    print(f"{Colors.GREEN}✓ {msg}{Colors.RESET}")
+    print(f"{Colors.GREEN}[PASS] {msg}{Colors.RESET}")
 
 def print_error(msg):
-    print(f"{Colors.RED}✗ {msg}{Colors.RESET}")
+    print(f"{Colors.RED}[FAIL] {msg}{Colors.RESET}")
 
 def print_info(msg):
-    print(f"{Colors.BLUE}ℹ {msg}{Colors.RESET}")
+    print(f"{Colors.BLUE}[INFO] {msg}{Colors.RESET}")
 
 def print_section(title):
     print(f"\n{Colors.YELLOW}{'='*60}")
@@ -225,7 +225,7 @@ def test_upload_with_mock_image():
             for b in data['results']:
                 print_info(f"  {b['name']} ({b['color']}) conf={b['confidence']:.0%}")
         else:
-            print_info("No bricks detected — model may need real photos for best results")
+            print_info("No bricks detected - model may need real photos for best results")
         return True
     except Exception as e:
         print_error(f"Image upload test failed: {e}")
@@ -285,10 +285,10 @@ def test_error_handling():
 
 def main():
     print(f"\n{Colors.BLUE}")
-    print("╔" + "═"*58 + "╗")
-    print("║" + "LEGO BRICK COUNTER - INTEGRATION TEST".center(58) + "║")
-    print("║" + "Testing Backend ↔ Frontend Compatibility".center(58) + "║")
-    print("╚" + "═"*58 + "╝")
+    print("=" * 60)
+    print("LEGO BRICK COUNTER - INTEGRATION TEST".center(60))
+    print("Testing Backend / Frontend Compatibility".center(60))
+    print("=" * 60)
     print(Colors.RESET)
     
     print_info(f"Target: {BASE_URL}")
@@ -329,10 +329,10 @@ def main():
     
     print()
     if passed == total:
-        print(f"{Colors.GREEN}✓ ALL TESTS PASSED ({passed}/{total}){Colors.RESET}")
+        print(f"{Colors.GREEN}ALL TESTS PASSED ({passed}/{total}){Colors.RESET}")
         return 0
     else:
-        print(f"{Colors.RED}✗ SOME TESTS FAILED ({passed}/{total}){Colors.RESET}")
+        print(f"{Colors.RED}SOME TESTS FAILED ({passed}/{total}){Colors.RESET}")
         return 1
 
 if __name__ == "__main__":

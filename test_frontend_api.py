@@ -29,10 +29,10 @@ def test_flutter_api_contract():
         assert "status" in data
         assert "pinecone_status" in data
         assert "detector_status" in data
-        print("   ✓ Health endpoint matches Flutter expectations")
+        print("   [PASS] Health endpoint matches Flutter expectations")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Test 2: Upload image (used by ScanScreen)
     print("2. Testing /upload endpoint (ScanScreen)")
@@ -60,10 +60,10 @@ def test_flutter_api_contract():
             assert "name" in brick
             assert "color" in brick
             assert "quantity" in brick
-        print("   ✓ Upload endpoint matches Flutter expectations (ScanScreen)")
+        print("   [PASS] Upload endpoint matches Flutter expectations (ScanScreen)")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Test 3: Inventory GET (used by InventoryScreen)
     print("3. Testing GET /inventory endpoint (InventoryScreen)")
@@ -82,10 +82,10 @@ def test_flutter_api_contract():
             assert "name" in item
             assert "color" in item
             assert "quantity" in item
-        print("   ✓ Inventory GET matches Flutter expectations (InventoryScreen)")
+        print("   [PASS] Inventory GET matches Flutter expectations (InventoryScreen)")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Test 4: Recommendations (used by RecommendationsScreen)
     print("4. Testing /recommendations endpoint (RecommendationsScreen)")
@@ -103,10 +103,10 @@ def test_flutter_api_contract():
             assert "name" in set_rec
             assert "completion_percentage" in set_rec
             assert "missing_pieces" in set_rec
-        print("   ✓ Recommendations matches Flutter expectations (RecommendationsScreen)")
+        print("   [PASS] Recommendations matches Flutter expectations (RecommendationsScreen)")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Test 5: Brick metadata (used by various screens)
     print("5. Testing /brick/{id} endpoint")
@@ -120,10 +120,10 @@ def test_flutter_api_contract():
         brick = data["brick"]
         assert "id" in brick
         assert "official_name" in brick
-        print("   ✓ Brick metadata endpoint matches Flutter expectations")
+        print("   [PASS] Brick metadata endpoint matches Flutter expectations")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Test 6: Set metadata
     print("6. Testing /set/{id} endpoint")
@@ -137,10 +137,10 @@ def test_flutter_api_contract():
         set_data = data["set"]
         assert "set_id" in set_data
         assert "name" in set_data
-        print("   ✓ Set metadata endpoint matches Flutter expectations")
+        print("   [PASS] Set metadata endpoint matches Flutter expectations")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Test 7: Base64 upload (web platform)
     print("7. Testing base64 image upload (web platform)")
@@ -162,10 +162,10 @@ def test_flutter_api_contract():
         data = resp.json()
         assert data.get("success") == True
         assert "results" in data
-        print("   ✓ Base64 upload works (web platform support)")
+        print("   [PASS] Base64 upload works (web platform support)")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Test 8: Error codes match Flutter expectations
     print("8. Testing error handling")
@@ -183,10 +183,10 @@ def test_flutter_api_contract():
         data = resp.json()
         assert data.get("success") == False
         
-        print("   ✓ Error responses match Flutter expectations")
+        print("   [PASS] Error responses match Flutter expectations")
         tests_passed += 1
     except Exception as e:
-        print(f"   ✗ Failed: {e}")
+        print(f"   [FAIL] Failed: {e}")
     
     # Summary
     print("\n" + "="*70)
@@ -194,10 +194,10 @@ def test_flutter_api_contract():
     print("="*70)
     
     if tests_passed == tests_total:
-        print("✓ Frontend API service will work correctly with backend")
+        print("[PASS] Frontend API service will work correctly with backend")
         return 0
     else:
-        print(f"✗ {tests_total - tests_passed} test(s) failed")
+        print(f"[FAIL] {tests_total - tests_passed} test(s) failed")
         return 1
 
 

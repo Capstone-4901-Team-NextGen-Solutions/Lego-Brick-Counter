@@ -18,11 +18,11 @@ with open(test_image_path, 'rb') as f:
 
 if response.status_code == 200:
     results = response.json()
-    print(f"\n✅ Upload successful!")
+    print(f"\nUpload successful")
     print(f"Bricks detected: {results['bricks_detected']}")
     print("\nDetected bricks:")
     for brick in results['results']:
         print(f"  - {brick['name']} (ID: {brick['id']}) x{brick['quantity']} - {brick['color']}")
 else:
-    print(f"\n❌ Upload failed: {response.status_code}")
+    print(f"\nUpload failed: {response.status_code}")
     print(f"Error: {response.text}")

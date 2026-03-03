@@ -99,7 +99,7 @@ Content-Type: application/json
 
 ---
 
-### 3. 🔍 Enhanced Photo Analysis
+### 3. Enhanced Photo Analysis
 **Endpoint**: `POST /api/analyze-photo`
 
 **Description**: Advanced analysis with detailed metadata and statistics.
@@ -506,7 +506,7 @@ file: [binary image data]
 
 ---
 
-## ⏱Performance Expectations
+## Performance Expectations
 
 | Endpoint | Expected Response Time | Notes |
 |----------|----------------------|-------|

@@ -14,14 +14,14 @@ from typing import List, Dict, Optional, Any
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Attempt Pinecone import – the rest of the app works without it
+# Attempt Pinecone import - the rest of the app works without it
 # ---------------------------------------------------------------------------
 try:
     from pinecone import Pinecone, ServerlessSpec
     PINECONE_AVAILABLE = True
 except ImportError:
     PINECONE_AVAILABLE = False
-    logger.warning("pinecone-client not installed – running in local-only mode")
+    logger.warning("pinecone-client not installed - running in local-only mode")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,14 +45,14 @@ class PineconeService:
     # ------------------------------------------------------------------
     def _init_pinecone(self):
         if not PINECONE_AVAILABLE:
-            logger.info("Pinecone SDK not available – skipping init")
+            logger.info("Pinecone SDK not available - skipping init")
             return
 
         api_key = os.getenv("PINECONE_API_KEY", "")
         index_name = os.getenv("PINECONE_INDEX_NAME", "lego-bricks")
 
         if not api_key or api_key == "your-pinecone-api-key-here":
-            logger.info("PINECONE_API_KEY not configured – running in local-only mode")
+            logger.info("PINECONE_API_KEY not configured - running in local-only mode")
             return
 
         try:
@@ -61,7 +61,7 @@ class PineconeService:
             # Create index if it doesn't exist
             existing = [idx.name for idx in pc.list_indexes()]
             if index_name not in existing:
-                logger.info(f"Creating Pinecone index '{index_name}' …")
+                logger.info(f"Creating Pinecone index '{index_name}'...")
                 pc.create_index(
                     name=index_name,
                     dimension=EMBEDDING_DIM,
@@ -74,7 +74,7 @@ class PineconeService:
 
             self.index = pc.Index(index_name)
             self.enabled = True
-            logger.info(f"✅ Pinecone connected – index '{index_name}'")
+            logger.info(f"Pinecone connected - index '{index_name}'")
         except Exception as exc:
             logger.error(f"Pinecone init failed: {exc}")
             self.enabled = False
@@ -91,12 +91,12 @@ class PineconeService:
         """
         vec = [0.0] * EMBEDDING_DIM
 
-        # Part-number hash → first 32 floats
+        # Part-number hash -> first 32 floats
         part_hash = hashlib.md5(brick.get("name", "unknown").encode()).hexdigest()
         for i, ch in enumerate(part_hash[:32]):
             vec[i] = int(ch, 16) / 15.0  # normalise to [0, 1]
 
-        # Colour hash → next 32 floats
+        # Colour hash -> next 32 floats
         colour_hash = hashlib.md5(brick.get("color", "unknown").encode()).hexdigest()
         for i, ch in enumerate(colour_hash[:32]):
             vec[32 + i] = int(ch, 16) / 15.0
@@ -105,7 +105,7 @@ class PineconeService:
         vec[64] = min(brick.get("quantity", 1) / 100.0, 1.0)
         vec[65] = brick.get("confidence", 0.5)
 
-        # Size proxy from name (e.g. "2x4 Brick" → 2, 4)
+        # Size proxy from name (e.g. "2x4 Brick" -> 2, 4)
         name = brick.get("name", "")
         dims = [c for c in name.split() if "x" in c]
         if dims:

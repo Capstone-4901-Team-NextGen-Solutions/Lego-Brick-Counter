@@ -46,7 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Singletons – initialised once at startup
+# Singletons - initialised once at startup
 # ---------------------------------------------------------------------------
 
 # ONNX Detector
@@ -54,12 +54,12 @@ detector: Optional[BrickDetector] = None
 try:
     detector = BrickDetector(
         model_path="best.onnx",
-        conf_threshold=0.20,
+        conf_threshold=0.12,
         iou_threshold=0.45,
     )
-    logger.info("✅ Brick detector ready")
+    logger.info("Brick detector ready")
 except Exception as exc:
-    logger.warning(f"⚠️  Detector unavailable ({exc}) – place best.onnx in backend/")
+    logger.warning(f"Detector unavailable ({exc}) - place best.onnx in backend/")
 
 # Pinecone
 pinecone_svc = PineconeService()
@@ -110,7 +110,7 @@ if pinecone_svc.enabled:
     pinecone_svc.upsert_sets(_seed_sets)
 
 # ---------------------------------------------------------------------------
-# Lego part-number map (class_names.txt → official IDs)
+# Lego part-number map (class_names.txt -> official IDs)
 # ---------------------------------------------------------------------------
 LEGO_ID_MAP = {
     "2x4 Brick": "3001",
@@ -278,7 +278,7 @@ def _detect_bricks(filepath: str) -> list:
     try:
         raw = detector.detect_bricks(filepath)
         aggregated = _aggregate(raw)
-        logger.info(f"Detection: {len(raw)} raw → {len(aggregated)} aggregated")
+        logger.info(f"Detection: {len(raw)} raw -> {len(aggregated)} aggregated")
         return aggregated
     except Exception as exc:
         logger.error(f"Detection error: {exc}")
