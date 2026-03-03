@@ -17,3 +17,7 @@ pinecone-client>=3.0.0,<5.0.0
 # Environment & Utilities
 python-dotenv>=1.0.0,<2.0.0
 requests>=2.31.0,<3.0.0
+flask-sqlalchemy 
+flask-login 
+flask-bcrypt 
+psycopg2-binary
