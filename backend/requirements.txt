@@ -21,3 +21,7 @@ flask-sqlalchemy
 flask-login 
 flask-bcrypt 
 psycopg2-binary
+PyJWT
+
+
+# Use "py -m pip install -r requirements.txt"
