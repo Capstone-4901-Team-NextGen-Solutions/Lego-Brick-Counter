@@ -44,9 +44,9 @@ How to Run:
 
 1) Download repository by cloning it.
 2) use 'cd backend' to get into the /backend folder.
-3) run 'py -3.11 -m pip install -r requirements.txt' //Note: any version of python 3.11 will do, and it I had to install it to be able to download the pakages needed to run the app in the requirements.txt.
-4) After that run "py -3.11 app.py". This will run the backend part of the app.
-5) In another terminal, either on VS code or the CMD, navigate to the /frontend folder by 'cd .../frontend' or just 'cd frontend' if you are already on the project file path. //Note: go to the file path where the project is on.
+3) run 'py -m pip install -r requirements.txt' //Note: any version of python 3.11 will do, and it I had to install it to be able to download the pakages needed to run the app in the requirements.txt.
+4) After that run "py app.py". This will run the backend part of the app.
+5) In another terminal, either on VS code or the CMD, navigate to the /frontend folder by 'cd .../frontend' or just 'cd frontend' if you are already on the root project file path. //Note: go to the file path where the project is on.
 6) Once you are in the frontend folder, run 'flutter clean'.
 7) Run 'flutter pub get'.
 8) Finally run 'flutter run'.
