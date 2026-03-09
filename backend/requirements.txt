@@ -1,19 +1,20 @@
-# Core Framework
-Flask==3.1.0
-Flask-CORS==5.0.1
-Werkzeug==3.1.3
+# Flask API
+Flask==2.2.5
+Flask-CORS==4.0.0
+Werkzeug==3.0.1
 
-# Image Processing
-opencv-python-headless>=4.10.0
-numpy>=1.26.0
-Pillow>=10.0.0
+# Azure Custom Vision
+azure-cognitiveservices-vision-customvision==3.1.0
+msrest==0.7.1
 
-# ML Inference
-onnxruntime>=1.17.0,<2.0.0
+# Computer Vision & Image Processing
+opencv-python==4.8.1.78
+Pillow==9.5.0
+numpy==1.24.3
 
-# Vector Database
-pinecone-client>=3.0.0,<5.0.0
+# Environment & Utils
+python-dotenv==0.21.1
+requests==2.31.0
 
-# Environment & Utilities
-python-dotenv>=1.0.0,<2.0.0
-requests>=2.31.0,<3.0.0
+# Pinecone (your existing integration)
+pinecone-client>=3.0.0
