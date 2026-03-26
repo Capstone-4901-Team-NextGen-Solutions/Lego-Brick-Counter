@@ -899,6 +899,24 @@ def get_scan_history(current_user):
         } for scan in scans]
     })
 
+@app.route("/api/scan-history", methods=["DELETE"])
+@token_required
+def clear_scan_history(current_user):
+    """Clear all scan history for current user"""
+    try:
+        ScanHistory.query.filter_by(user_id=current_user.id).delete()
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "Scan history cleared successfully"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": f"Failed to clear scan history: {str(e)}"
+        }), 500
+
 # ---------------------------------------------------------------------------
 # UPLOAD ENDPOINT (with authentication and scan history)
 # ---------------------------------------------------------------------------

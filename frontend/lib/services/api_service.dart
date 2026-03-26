@@ -411,5 +411,22 @@ class ApiService {
       throw Exception('Failed to load scan history: $e');
     }
   }
+
+  /// Clear all scan history for current user
+  static Future<void> clearScanHistory() async {
+    final result = await _authRequest('DELETE', '/scan-history');
+    if (result['success'] != true) {
+      throw Exception(result['error'] ?? 'Failed to clear scan history');
+    }
+  }
+
+  /// Export inventory as JSON string
+  static Future<String> exportInventory() async {
+    final result = await _authRequest('GET', '/inventory');
+    if (result['success'] == true && result['inventory'] != null) {
+      return json.encode(result['inventory']);
+    }
+    throw Exception('Failed to export inventory');
+  }
 }
 
