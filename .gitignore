@@ -1,4 +1,39 @@
+# Python
 __pycache__/ 
 *.pyc 
 *.onnx 
+
+# Environment
 backend/.env 
+backend/.env.example
+
+# Database
+backend/instance/
+*.db
+*.db-journal
+
+# Uploads
+backend/uploads/
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+frontend/linux/flutter/generated_plugin_registrant.cc
+frontend/linux/flutter/generated_plugin_registrant.h
+frontend/linux/flutter/generated_plugins.cmake
+frontend/macos/Flutter/GeneratedPluginRegistrant.swift
+frontend/windows/flutter/generated_plugin_registrant.cc
+frontend/windows/flutter/generated_plugin_registrant.h
+frontend/windows/flutter/generated_plugins.cmake
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
