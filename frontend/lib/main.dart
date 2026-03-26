@@ -408,6 +408,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> _detectBricks() async {
     if (_selectedImage == null) return;
     
+    print('🔍 DEBUG: Starting detection...');
     setState(() {
       _isDetecting = true;
       _errorMessage = null;
@@ -415,14 +416,24 @@ class _ScanScreenState extends State<ScanScreen> {
     });
 
     try {
+      print('📤 DEBUG: Calling ApiService.uploadImage...');
       final result = await ApiService.uploadImage(_selectedImage!);
+      print('📥 DEBUG: API Response: $result');
+      print('📊 DEBUG: Success field: ${result['success']}');
+      print('📊 DEBUG: Results field: ${result['results']}');
 
       if (result['success'] == true) {
         final results = (result['results'] as List?) ?? [];
+        print('✅ DEBUG: Found ${results.length} results');
+        print('📋 DEBUG: Results data: $results');
+        
         setState(() {
           _detectionResults = results;
+          print('🔄 DEBUG: Set _detectionResults to ${_detectionResults.length} items');
+          
           _scannedBricks = results
               .map((d) {
+                print('🧱 DEBUG: Processing brick: $d');
                 final colorName = d['color'] ?? 'Unknown';
                 return LegoBrick(
                   id: d['id'] ?? d['brick_id'] ?? '0000',
@@ -435,9 +446,11 @@ class _ScanScreenState extends State<ScanScreen> {
               })
               .toList();
           _errorMessage = null;
+          print('✅ DEBUG: Created ${_scannedBricks.length} LegoBrick objects');
         });
 
         if (mounted && _scannedBricks.isNotEmpty) {
+          print('🎉 DEBUG: Showing success snackbar');
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Row(children: [
               const Icon(Icons.check_circle, color: Colors.white),
@@ -448,8 +461,11 @@ class _ScanScreenState extends State<ScanScreen> {
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ));
+        } else {
+          print('⚠️ DEBUG: No bricks to show or not mounted');
         }
       } else {
+        print('❌ DEBUG: API returned success=false');
         setState(() => _errorMessage = result['error'] ?? 'Detection failed.');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -459,7 +475,9 @@ class _ScanScreenState extends State<ScanScreen> {
           ));
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('💥 DEBUG: Exception caught: $e');
+      print('📍 DEBUG: Stack trace: $stackTrace');
       setState(() => _errorMessage = 'Network error. Check your connection.');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -470,6 +488,8 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     } finally {
       setState(() => _isDetecting = false);
+      print('🏁 DEBUG: Detection complete. _isDetecting = false');
+      print('📊 DEBUG: Final state - _scannedBricks: ${_scannedBricks.length}, _detectionResults: ${_detectionResults.length}');
     }
   }
   
