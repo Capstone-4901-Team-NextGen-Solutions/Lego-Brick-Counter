@@ -174,13 +174,6 @@ class ApiService {
   }) async => _authRequest('DELETE', '/inventory/$brickId?color=$color');
 
   // -------------------------------------------------------------------
-  // Scan history
-  // -------------------------------------------------------------------
-  
-  static Future<Map<String, dynamic>> getScanHistory({int limit = 20}) async =>
-      _authRequest('GET', '/scan-history?limit=$limit');
-
-  // -------------------------------------------------------------------
   // Private helpers 
   // -------------------------------------------------------------------
 
@@ -402,4 +395,21 @@ class ApiService {
   /// Get Pinecone index statistics.
   static Future<Map<String, dynamic>> getPineconeStats() async =>
       _safeGet('/pinecone/stats');
+
+  /// Get user's scan history with detection results.
+  static Future<List<dynamic>> getScanHistory() async {
+    try {
+      final result = await _authRequest('GET', '/scan-history');
+      if (result['success'] == true && result['scans'] != null) {
+        final scans = result['scans'];
+        if (scans is List) {
+          return List<dynamic>.from(scans);
+        }
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Failed to load scan history: $e');
+    }
+  }
 }
+

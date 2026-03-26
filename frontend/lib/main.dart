@@ -4,6 +4,7 @@ import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -320,6 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _idx = 0;
   final _screens = const [
     ScanScreen(),
+    ScanHistoryScreen(),
     InventoryScreen(),
     RecommendationsScreen(),
     ProfileScreen(),
@@ -345,6 +347,7 @@ class _HomeScreenState extends State<HomeScreen> {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.camera_alt_outlined), selectedIcon: Icon(Icons.camera_alt, color: LegoApp.legoRed), label: 'Scan'),
+          NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history, color: LegoApp.legoRed), label: 'History'),
           NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2, color: LegoApp.legoRed), label: 'Inventory'),
           NavigationDestination(icon: Icon(Icons.construction_outlined), selectedIcon: Icon(Icons.construction, color: LegoApp.legoRed), label: 'Builds'),
           NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person, color: LegoApp.legoRed), label: 'Profile'),
@@ -1507,6 +1510,249 @@ class _ProfileScreenState extends State<ProfileScreen> {
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: onTap,
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scan History Screen
+// ---------------------------------------------------------------------------
+
+class ScanHistoryScreen extends StatefulWidget {
+  const ScanHistoryScreen({super.key});
+  @override
+  State<ScanHistoryScreen> createState() => _ScanHistoryScreenState();
+}
+
+class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
+  List<dynamic> _history = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final history = await ApiService.getScanHistory();
+      setState(() {
+        _history = history;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load scan history: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Color _colorFromName(String? colorName) {
+    switch (colorName?.toLowerCase()) {
+      case 'red': return Colors.red;
+      case 'orange': return Colors.orange;
+      case 'yellow': return Colors.yellow;
+      case 'lime green': return Colors.lightGreen;
+      case 'green': return Colors.green;
+      case 'dark green': return Colors.green.shade800;
+      case 'blue': return Colors.blue;
+      case 'dark blue': return Colors.blue.shade900;
+      case 'light blue': return Colors.lightBlue;
+      case 'purple': return Colors.purple;
+      case 'white': return Colors.white;
+      case 'light gray': return Colors.grey.shade300;
+      case 'dark gray': return Colors.grey.shade700;
+      case 'black': return Colors.black;
+      case 'brown': return const Color(0xFF795548);
+      case 'tan': return const Color(0xFFD2B48C);
+      default: return Colors.grey;
+    }
+  }
+
+  Future<void> _addScanToInventory(List<dynamic> scanResults) async {
+    if (scanResults.isEmpty) return;
+
+    final bricks = scanResults.map((brick) => {
+      'id': brick['brick_id'] ?? brick['id'] ?? '0000',
+      'name': brick['brick_name'] ?? brick['name'] ?? brick['class'] ?? 'Unknown',
+      'color': brick['color'] ?? 'Unknown',
+      'quantity': brick['count'] ?? brick['quantity'] ?? 1,
+    }).toList();
+
+    try {
+      final result = await ApiService.updateInventory(bricks);
+      if (result['success'] == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Row(children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 8),
+            Text('✓ Bricks added to inventory'),
+          ]),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to add to inventory: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Scan History', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadHistory,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: LegoApp.legoYellow))
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, size: 60, color: Colors.red),
+                        const SizedBox(height: 16),
+                        Text(_errorMessage!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _loadHistory,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _history.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.history, size: 80, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text('No scans yet.\nGo detect some bricks!', style: TextStyle(color: Colors.grey.shade600, fontSize: 16), textAlign: TextAlign.center),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadHistory,
+                      color: LegoApp.legoYellow,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _history.length,
+                        itemBuilder: (context, index) {
+                          final scan = _history[index];
+                          final scanDate = scan['scan_date'] ?? scan['date'] ?? '';
+                          final totalBricks = scan['total_bricks'] ?? 0;
+                          final uniqueTypes = scan['unique_types'] ?? 0;
+                          
+                          List<dynamic> scanResults = [];
+                          try {
+                            final results = scan['scan_results'] ?? scan['results'];
+                            if (results is String) {
+                              scanResults = jsonDecode(results);
+                            } else if (results is List) {
+                              scanResults = results;
+                            }
+                          } catch (e) {
+                            scanResults = [];
+                          }
+
+                          String formattedDate = scanDate;
+                          try {
+                            final dt = DateTime.parse(scanDate);
+                            final months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                            final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+                            final minute = dt.minute.toString().padLeft(2, '0');
+                            final period = dt.hour >= 12 ? 'PM' : 'AM';
+                            formattedDate = '${months[dt.month]} ${dt.day}, ${dt.year} • $hour:$minute $period';
+                          } catch (e) {
+                            formattedDate = scanDate.toString().substring(0, scanDate.length > 16 ? 16 : scanDate.length);
+                          }
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: ExpansionTile(
+                              leading: CircleAvatar(
+                                backgroundColor: LegoApp.legoYellow,
+                                child: const Icon(Icons.document_scanner, color: Colors.black),
+                              ),
+                              title: Text(formattedDate, style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16)),
+                              subtitle: Text('$totalBricks bricks • $uniqueTypes types', style: TextStyle(color: Colors.grey.shade600)),
+                              trailing: Chip(
+                                label: Text('$totalBricks bricks', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                backgroundColor: LegoApp.legoYellow.withValues(alpha: 0.2),
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              children: [
+                                if (scanResults.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Text('No result details available', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey.shade600)),
+                                  )
+                                else
+                                  ...scanResults.map((brick) {
+                                    final brickName = brick['brick_name'] ?? brick['name'] ?? brick['class'] ?? 'Unknown';
+                                    final confidence = (brick['confidence'] ?? 0) as num;
+                                    final count = brick['count'] ?? brick['quantity'] ?? 1;
+                                    final color = brick['color'] ?? 'Unknown';
+
+                                    return ListTile(
+                                      leading: CircleAvatar(radius: 8, backgroundColor: _colorFromName(color)),
+                                      title: Text(brickName, style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
+                                      subtitle: Text('Confidence: ${(confidence * 100).toStringAsFixed(1)}%'),
+                                      trailing: Text('x$count', style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16)),
+                                    );
+                                  }),
+                                if (scanResults.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: TextButton.icon(
+                                        onPressed: () => _addScanToInventory(scanResults),
+                                        icon: const Icon(Icons.add_circle_outline),
+                                        label: const Text('Add All to Inventory'),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: LegoApp.legoBlue,
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
     );
   }
 }
