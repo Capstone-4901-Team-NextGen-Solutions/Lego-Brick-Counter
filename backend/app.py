@@ -19,6 +19,7 @@ import numpy as np
 
 from brick_detector import BrickDetector
 from pinecone_service import PineconeService
+from color_detector import HSVColorClassifier
 
 # Try to import Azure detector (optional)
 try:
@@ -209,6 +210,10 @@ if detector is None:
         logger.info("ONNX Brick detector ready")
     except Exception as exc:
         logger.warning(f"ONNX Detector unavailable ({exc}) - place best.onnx in backend/")
+
+# Initialize color classifier
+color_classifier = HSVColorClassifier()
+logger.info("Color classifier initialized")
 
 # Pinecone
 pinecone_svc = PineconeService()
@@ -487,6 +492,23 @@ def _detect_bricks(filepath: str) -> list:
         return []
     try:
         raw = detector.detect_bricks(filepath)
+        
+        # Add color detection to each raw detection
+        for detection in raw:
+            try:
+                # Check if detection has bounding box information
+                bbox = detection.get('bounding_box') or detection.get('bbox')
+                if bbox and isinstance(bbox, dict) and all(k in bbox for k in ['left', 'top', 'width', 'height']):
+                    # Use bounding box for color detection
+                    color = color_classifier.detect_color_from_bbox(filepath, bbox)
+                else:
+                    # Fallback to full image color detection
+                    color = color_classifier.detect_color_from_image(filepath)
+                detection['color'] = color
+            except Exception as color_exc:
+                logger.warning(f"Color detection failed for brick: {color_exc}")
+                detection['color'] = 'Unknown'
+        
         aggregated = _aggregate(raw)
         logger.info(f"Detection: {len(raw)} raw -> {len(aggregated)} aggregated")
         return aggregated
