@@ -28,6 +28,17 @@ try:
 except ImportError:
     AZURE_AVAILABLE = False
 
+# Try to import YOLOv8 detector (optional)
+try:
+    from yolo_detector import YOLODetector
+    yolo_detector = YOLODetector(model_path='models/best.onnx', classes_path='models/classes.txt')
+    logger = logging.getLogger(__name__)
+    logger.info("✅ YOLOv8 detector initialized")
+except Exception as e:
+    yolo_detector = None
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ YOLOv8 detector not available: {e}")
+
 # Load environment variables FIRST
 load_dotenv()
 
@@ -1151,6 +1162,48 @@ def version():
         "build_date": "2026-03-24",
         "detector": detector_type,
         "pinecone": "connected" if pinecone_svc.enabled else "not_configured",
+    })
+
+# ---------------------------------------------------------------------------
+# YOLOv8 Live Detection Endpoints
+# ---------------------------------------------------------------------------
+
+@app.route('/api/detect/yolo', methods=['POST'])
+@token_required
+def detect_bricks_yolo(current_user):
+    """Detect LEGO bricks using YOLOv8 ONNX model — for live detection."""
+    if yolo_detector is None:
+        return jsonify({"error": "YOLOv8 model not loaded"}), 503
+    
+    if 'image' not in request.files:
+        # Also accept raw bytes in request body for live camera frames
+        image_bytes = request.get_data()
+        if not image_bytes:
+            return jsonify({"error": "No image provided"}), 400
+    else:
+        image_bytes = request.files['image'].read()
+    
+    try:
+        results = yolo_detector.detect(image_bytes)
+        return jsonify({
+            "success": True,
+            "model": "yolov8s-lego-v1",
+            "total_bricks": results["total_bricks"],
+            "brick_counts": results["brick_counts"],
+            "detections": results["detections"]
+        })
+    except Exception as e:
+        logger.error(f"YOLOv8 detection error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/detect/yolo/health', methods=['GET'])
+def yolo_health():
+    """Check if YOLOv8 model is loaded and ready."""
+    return jsonify({
+        "available": yolo_detector is not None,
+        "model": "yolov8s-lego-v1",
+        "classes": yolo_detector.class_names if yolo_detector else []
     })
 
 # Error handlers

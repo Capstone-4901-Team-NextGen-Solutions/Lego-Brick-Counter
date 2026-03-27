@@ -501,5 +501,30 @@ class ApiService {
       };
     }
   }
+
+  /// Send image bytes to YOLOv8 backend for live detection
+  static Future<Map<String, dynamic>> detectWithYolo(List<int> imageBytes) async {
+    final auth = AuthService();
+    
+    var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/yolo'));
+    request.headers.addAll(auth.authHeaders);
+    request.files.add(http.MultipartFile.fromBytes('image', imageBytes, filename: 'frame.jpg'));
+    
+    try {
+      var streamedResponse = await request.send().timeout(timeout);
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else if (response.statusCode == 401) {
+        await auth.logout();
+        throw Exception('Session expired');
+      } else {
+        throw Exception('YOLOv8 detection failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('YOLOv8 detection error: $e');
+    }
+  }
 }
 

@@ -5,10 +5,13 @@ import 'services/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:camera/camera.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -786,6 +789,333 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // ---------------------------------------------------------------------------
+// Live Detection Screen
+// ---------------------------------------------------------------------------
+
+class LiveDetectionScreen extends StatefulWidget {
+  const LiveDetectionScreen({super.key});
+  
+  @override
+  State<LiveDetectionScreen> createState() => _LiveDetectionScreenState();
+}
+
+class _LiveDetectionScreenState extends State<LiveDetectionScreen> {
+  CameraController? _controller;
+  bool _isDetecting = false;
+  List<dynamic> _detections = [];
+  Timer? _detectionTimer;
+  String? _error;
+  Size? _imageSize;
+  
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+  }
+  
+  Future<void> _initializeCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() => _error = 'No camera available');
+        return;
+      }
+      
+      _controller = CameraController(
+        cameras.first,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+      
+      await _controller!.initialize();
+      if (!mounted) return;
+      
+      setState(() {});
+      
+      // Start detection loop
+      _detectionTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) => _detectFrame());
+    } catch (e) {
+      setState(() => _error = 'Camera permission required for live detection');
+    }
+  }
+  
+  Future<void> _detectFrame() async {
+    if (_isDetecting || _controller == null || !_controller!.value.isInitialized) return;
+    
+    setState(() => _isDetecting = true);
+    
+    try {
+      final image = await _controller!.takePicture();
+      final bytes = await File(image.path).readAsBytes();
+      
+      // Store image size for bbox scaling
+      final decodedImage = await decodeImageFromList(bytes);
+      _imageSize = Size(decodedImage.width.toDouble(), decodedImage.height.toDouble());
+      
+      final result = await ApiService.detectWithYolo(bytes);
+      
+      if (mounted && result['success'] == true) {
+        setState(() {
+          _detections = result['detections'] ?? [];
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Detection error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isDetecting = false);
+      }
+    }
+  }
+  
+  @override
+  void dispose() {
+    _detectionTimer?.cancel();
+    _controller?.dispose();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.camera_alt, size: 60, color: Colors.white54),
+              const SizedBox(height: 16),
+              Text(_error!, style: const TextStyle(color: Colors.white), textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Color(0xFFFFD700))),
+      );
+    }
+    
+    final screenSize = MediaQuery.of(context).size;
+    
+    // Calculate brick counts
+    final brickCounts = <String, int>{};
+    for (var detection in _detections) {
+      final name = detection['class_name'] ?? 'Unknown';
+      brickCounts[name] = (brickCounts[name] ?? 0) + 1;
+    }
+    
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // Camera Preview
+          SizedBox.expand(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _controller!.value.previewSize!.height,
+                height: _controller!.value.previewSize!.width,
+                child: CameraPreview(_controller!),
+              ),
+            ),
+          ),
+          
+          // Bounding Boxes Overlay
+          if (_imageSize != null)
+            CustomPaint(
+              size: Size.infinite,
+              painter: _BoundingBoxPainter(
+                detections: _detections,
+                imageSize: _imageSize!,
+                screenSize: screenSize,
+              ),
+            ),
+          
+          // Top Bar
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'LIVE',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          
+          // Bottom Detection Panel
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 140,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_detections.length} bricks detected',
+                    style: GoogleFonts.nunito(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: brickCounts.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'Point camera at LEGO bricks',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          )
+                        : ListView(
+                            scrollDirection: Axis.horizontal,
+                            children: brickCounts.entries.map((entry) {
+                              return Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFD700).withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: const Color(0xFFFFD700)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      entry.key,
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFD700),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        '${entry.value}',
+                                        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w700, fontSize: 12),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Custom Painter for Bounding Boxes
+class _BoundingBoxPainter extends CustomPainter {
+  final List<dynamic> detections;
+  final Size imageSize;
+  final Size screenSize;
+  
+  _BoundingBoxPainter({
+    required this.detections,
+    required this.imageSize,
+    required this.screenSize,
+  });
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..color = Colors.green;
+    
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.left,
+    );
+    
+    for (var detection in detections) {
+      final bbox = detection['bbox'];
+      if (bbox == null) continue;
+      
+      // Scale bbox from image coordinates to screen coordinates
+      final scaleX = screenSize.width / imageSize.width;
+      final scaleY = screenSize.height / imageSize.height;
+      
+      final x1 = (bbox['x1'] ?? 0) * scaleX;
+      final y1 = (bbox['y1'] ?? 0) * scaleY;
+      final x2 = (bbox['x2'] ?? 0) * scaleX;
+      final y2 = (bbox['y2'] ?? 0) * scaleY;
+      
+      // Draw rectangle
+      canvas.drawRect(Rect.fromLTRB(x1, y1, x2, y2), paint);
+      
+      // Draw label
+      final className = detection['class_name'] ?? 'Unknown';
+      final confidence = ((detection['confidence'] ?? 0) * 100).toStringAsFixed(0);
+      final label = '$className $confidence%';
+      
+      textPainter.text = TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          backgroundColor: Colors.green,
+        ),
+      );
+      
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(x1, y1 - 20));
+    }
+  }
+  
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// ---------------------------------------------------------------------------
 // Scan Screen (unchanged, but will now use authenticated API calls)
 // ---------------------------------------------------------------------------
 
@@ -1014,7 +1344,32 @@ class _ScanScreenState extends State<ScanScreen> {
           _imagePreviewArea(),
           const SizedBox(height: 16),
           if (_selectedImage != null) _detectButton(),
-          if (_selectedImage == null) _actionButtons(),
+          if (_selectedImage == null) ...[
+            _actionButtons(),
+            const SizedBox(height: 12),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text('— or try live detection —', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LiveDetectionScreen()),
+                  );
+                },
+                icon: const Icon(Icons.videocam),
+                label: const Text('Live Detection'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD01012),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+              ),
+            ),
+          ],
         ]),
       ),
     );
