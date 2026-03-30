@@ -428,5 +428,78 @@ class ApiService {
     }
     throw Exception('Failed to export inventory');
   }
+
+  /// Get dashboard data by making parallel API calls
+  static Future<Map<String, dynamic>> getDashboardData() async {
+    try {
+      // Make 3 parallel API calls
+      final results = await Future.wait([
+        _authRequest('GET', '/inventory'),
+        _authRequest('GET', '/scan-history'),
+        _authRequest('GET', '/recommendations'),
+      ]);
+
+      final inventoryResult = results[0];
+      final scanHistoryResult = results[1];
+      final recommendationsResult = results[2];
+
+      // Process inventory data
+      int totalBricks = 0;
+      int uniqueTypes = 0;
+      if (inventoryResult['success'] == true && inventoryResult['inventory'] != null) {
+        final inventory = inventoryResult['inventory'] as List;
+        uniqueTypes = inventory.length;
+        for (var item in inventory) {
+          totalBricks += (item['quantity'] ?? 0) as int;
+        }
+      }
+
+      // Process scan history data
+      int totalScans = 0;
+      String? lastScanDate;
+      if (scanHistoryResult['success'] == true && scanHistoryResult['scans'] != null) {
+        final scans = scanHistoryResult['scans'] as List;
+        totalScans = scans.length;
+        if (scans.isNotEmpty) {
+          lastScanDate = scans[0]['date'] ?? scans[0]['scan_date'];
+        }
+      }
+
+      // Process recommendations data
+      int buildableSets = 0;
+      Map<String, dynamic>? topSet;
+      if (recommendationsResult['recommendations'] != null) {
+        final recommendations = recommendationsResult['recommendations'] as List;
+        for (var set in recommendations) {
+          final completion = set['completion_percentage'] ?? 0;
+          if (completion >= 50) {
+            buildableSets++;
+          }
+        }
+        if (recommendations.isNotEmpty) {
+          topSet = recommendations[0] as Map<String, dynamic>;
+        }
+      }
+
+      return {
+        'totalBricks': totalBricks,
+        'uniqueTypes': uniqueTypes,
+        'totalScans': totalScans,
+        'lastScanDate': lastScanDate,
+        'buildableSets': buildableSets,
+        'topSet': topSet,
+      };
+    } catch (e) {
+      // Return safe defaults if any call fails
+      return {
+        'totalBricks': 0,
+        'uniqueTypes': 0,
+        'totalScans': 0,
+        'lastScanDate': null,
+        'buildableSets': 0,
+        'topSet': null,
+      };
+    }
+  }
 }
 
