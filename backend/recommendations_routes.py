@@ -1,11 +1,6 @@
 from flask import request, jsonify
 
-
-# ── Set catalog ───────────────────────────────────────────────────
-# required_bricks: {brick_id: minimum_quantity_needed}
-# Add more sets here to expand recommendations.
-
-_SET_CATALOG = {
+_SET_CATALOG = { #existing sets, Add more sets here
     "10698": {
         "name": "Classic Creative Brick Box",
         "total_pieces": 790,

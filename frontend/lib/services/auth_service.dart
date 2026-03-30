@@ -5,9 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
 
 class AuthService extends ChangeNotifier {
-  // ── Singleton ────────────────────────────────────────────────────
-  // This is the critical fix. Previously `AuthService()` created a fresh
-  // instance every time, so ApiService always got an empty token.
   static final AuthService _instance = AuthService._internal();
   static AuthService get instance => _instance;
 
