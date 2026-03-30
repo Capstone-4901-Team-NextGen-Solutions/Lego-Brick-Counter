@@ -139,12 +139,80 @@ class ApiService {
   static Future<Map<String, dynamic>> changePassword({
     required String currentPassword,
     required String newPassword,
-  }) async =>
-      _authRequest('POST', '/auth/change-password',
-          body: json.encode({
-            'current_password': currentPassword,
-            'new_password': newPassword,
-          }));
+  }) async => _authRequest('POST', '/auth/change-password', body: json.encode({
+    'current_password': currentPassword,
+    'new_password': newPassword,
+  }));
+
+  // -------------------------------------------------------------------
+  // Authenticated inventory methods
+  // -------------------------------------------------------------------
+  
+  static Future<Map<String, dynamic>> addToInventory(List<Map<String, dynamic>> bricks) async =>
+      _authRequest('POST', '/inventory', body: json.encode({'bricks': bricks}));
+
+  static Future<Map<String, dynamic>> updateInventoryItem(
+    String brickId, {
+    String? color,
+    int? quantity,
+    String? name,
+  }) async => _authRequest('PUT', '/inventory/$brickId', body: json.encode({
+    if (color != null) 'color': color,
+    if (quantity != null) 'quantity': quantity,
+    if (name != null) 'name': name,
+  }));
+
+  static Future<Map<String, dynamic>> deleteInventoryItem(
+    String brickId, {
+    String color = 'Unknown',
+  }) async => _authRequest('DELETE', '/inventory/$brickId?color=$color');
+
+  // -------------------------------------------------------------------
+  // Private helpers 
+  // -------------------------------------------------------------------
+
+  /// Wraps any HTTP GET call with consistent error handling.
+  static Future<Map<String, dynamic>> _safeGet(String path) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl$path'),
+              headers: {'Accept': 'application/json'})
+          .timeout(timeout);
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      return {'error': 'Server returned status ${response.statusCode}'};
+    } on TimeoutException {
+      return {'error': 'Connection timed out'};
+    } catch (e) {
+      return {'error': 'Request failed: $e'};
+    }
+  }
+
+  /// Wraps any HTTP POST (JSON body) call.
+  static Future<Map<String, dynamic>> _safePost(
+      String path, Map<String, dynamic> body) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl$path'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode(body),
+          )
+          .timeout(timeout);
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      return {
+        'success': false,
+        'error': 'Server error (${response.statusCode}): ${response.body}'
+      };
+    } on TimeoutException {
+      return {'success': false, 'error': 'Request timed out'};
+    } catch (e) {
+      return {'success': false, 'error': 'Request failed: $e'};
+    }
+  }
 
   // ── Image upload ────────────────────────────────────────────────
 
@@ -299,5 +367,112 @@ class ApiService {
       _authRequest('POST', '/similar', body: json.encode({'brick': brick, 'top_k': topK}));
 
   static Future<Map<String, dynamic>> getPineconeStats() async =>
-      _authRequest('GET', '/pinecone/stats');
+      _safeGet('/pinecone/stats');
+
+  /// Get user's scan history with detection results.
+  static Future<List<dynamic>> getScanHistory() async {
+    try {
+      final result = await _authRequest('GET', '/scan-history');
+      if (result['success'] == true && result['scans'] != null) {
+        final scans = result['scans'];
+        if (scans is List) {
+          return List<dynamic>.from(scans);
+        }
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Failed to load scan history: $e');
+    }
+  }
+
+  /// Clear all scan history for current user
+  static Future<void> clearScanHistory() async {
+    final result = await _authRequest('DELETE', '/scan-history');
+    if (result['success'] != true) {
+      throw Exception(result['error'] ?? 'Failed to clear scan history');
+    }
+  }
+
+  /// Export inventory as JSON string
+  static Future<String> exportInventory() async {
+    final result = await _authRequest('GET', '/inventory');
+    if (result['success'] == true && result['inventory'] != null) {
+      return json.encode(result['inventory']);
+    }
+    throw Exception('Failed to export inventory');
+  }
+
+  /// Get dashboard data by making parallel API calls
+  static Future<Map<String, dynamic>> getDashboardData() async {
+    try {
+      // Make 3 parallel API calls
+      final results = await Future.wait([
+        _authRequest('GET', '/inventory'),
+        _authRequest('GET', '/scan-history'),
+        _authRequest('GET', '/recommendations'),
+      ]);
+
+      final inventoryResult = results[0];
+      final scanHistoryResult = results[1];
+      final recommendationsResult = results[2];
+
+      // Process inventory data
+      int totalBricks = 0;
+      int uniqueTypes = 0;
+      if (inventoryResult['success'] == true && inventoryResult['inventory'] != null) {
+        final inventory = inventoryResult['inventory'] as List;
+        uniqueTypes = inventory.length;
+        for (var item in inventory) {
+          totalBricks += (item['quantity'] ?? 0) as int;
+        }
+      }
+
+      // Process scan history data
+      int totalScans = 0;
+      String? lastScanDate;
+      if (scanHistoryResult['success'] == true && scanHistoryResult['scans'] != null) {
+        final scans = scanHistoryResult['scans'] as List;
+        totalScans = scans.length;
+        if (scans.isNotEmpty) {
+          lastScanDate = scans[0]['date'] ?? scans[0]['scan_date'];
+        }
+      }
+
+      // Process recommendations data
+      int buildableSets = 0;
+      Map<String, dynamic>? topSet;
+      if (recommendationsResult['recommendations'] != null) {
+        final recommendations = recommendationsResult['recommendations'] as List;
+        for (var set in recommendations) {
+          final completion = set['completion_percentage'] ?? 0;
+          if (completion >= 50) {
+            buildableSets++;
+          }
+        }
+        if (recommendations.isNotEmpty) {
+          topSet = recommendations[0] as Map<String, dynamic>;
+        }
+      }
+
+      return {
+        'totalBricks': totalBricks,
+        'uniqueTypes': uniqueTypes,
+        'totalScans': totalScans,
+        'lastScanDate': lastScanDate,
+        'buildableSets': buildableSets,
+        'topSet': topSet,
+      };
+    } catch (e) {
+      // Return safe defaults if any call fails
+      return {
+        'totalBricks': 0,
+        'uniqueTypes': 0,
+        'totalScans': 0,
+        'lastScanDate': null,
+        'buildableSets': 0,
+        'topSet': null,
+      };
+    }
+  }
 }
+

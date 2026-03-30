@@ -4,6 +4,7 @@ import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -318,12 +319,23 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _idx = 0;
-  final _screens = const [
-    ScanScreen(),
-    InventoryScreen(),
-    RecommendationsScreen(),
-    ProfileScreen(),
-  ];
+  late final List<Widget> _screens;
+  
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      DashboardScreen(
+        onScanTap: () => setState(() => _idx = 1),
+        onInventoryTap: () => setState(() => _idx = 3),
+      ),
+      const ScanScreen(),
+      const ScanHistoryScreen(),
+      const InventoryScreen(),
+      const RecommendationsScreen(),
+      const ProfileScreen(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -344,13 +356,432 @@ class _HomeScreenState extends State<HomeScreen> {
         indicatorColor: LegoApp.legoYellow.withValues(alpha: 0.3),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home, color: LegoApp.legoRed), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.camera_alt_outlined), selectedIcon: Icon(Icons.camera_alt, color: LegoApp.legoRed), label: 'Scan'),
+          NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history, color: LegoApp.legoRed), label: 'History'),
           NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2, color: LegoApp.legoRed), label: 'Inventory'),
           NavigationDestination(icon: Icon(Icons.construction_outlined), selectedIcon: Icon(Icons.construction, color: LegoApp.legoRed), label: 'Builds'),
           NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person, color: LegoApp.legoRed), label: 'Profile'),
         ],
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard Screen
+// ---------------------------------------------------------------------------
+
+class DashboardScreen extends StatefulWidget {
+  final VoidCallback? onScanTap;
+  final VoidCallback? onInventoryTap;
+  
+  const DashboardScreen({super.key, this.onScanTap, this.onInventoryTap});
+  
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  Map<String, dynamic> _data = {};
+  bool _isLoading = true;
+  String? _error;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboard();
+  }
+  
+  Future<void> _loadDashboard() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    
+    try {
+      final data = await ApiService.getDashboardData();
+      setState(() {
+        _data = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+  
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Colors.grey[600],
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.widgets, color: Color(0xFFFFD700), size: 24),
+            Text(' LEGO Inventory', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
+          ],
+        ),
+        backgroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadDashboard,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      body: _error != null
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.wifi_off, size: 60, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('Could not load dashboard'),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: _loadDashboard,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // A) Welcome Banner
+                    Container(
+                      height: 100,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFD700), Color(0xFFFFA000)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Welcome back!',
+                                  style: GoogleFonts.nunito(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 20,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Ready to scan some bricks?',
+                                  style: TextStyle(color: Colors.white, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.construction,
+                            size: 48,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // B) Stats Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            Icons.widgets,
+                            _data['totalBricks'] ?? 0,
+                            'Total Bricks',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildStatCard(
+                            Icons.category_outlined,
+                            _data['uniqueTypes'] ?? 0,
+                            'Brick Types',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildStatCard(
+                            Icons.document_scanner_outlined,
+                            _data['totalScans'] ?? 0,
+                            'Scans Done',
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    // D) Recent Scan Card
+                    _sectionHeader('LAST SCAN'),
+                    Card(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: _isLoading
+                            ? Container(
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              )
+                            : _data['lastScanDate'] == null
+                                ? Row(
+                                    children: [
+                                      Icon(Icons.info_outline, color: Colors.grey.shade600),
+                                      const SizedBox(width: 8),
+                                      const Text('No scans yet — try scanning some bricks!'),
+                                    ],
+                                  )
+                                : Row(
+                                    children: [
+                                      const Icon(Icons.access_time, color: Color(0xFFFFD700)),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Most Recent Scan',
+                                              style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 14),
+                                            ),
+                                            Text(
+                                              _formatDate(_data['lastScanDate']),
+                                              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Chip(
+                                        label: Text('${_data['totalScans']} total'),
+                                        backgroundColor: const Color(0xFFFFD700).withOpacity(0.2),
+                                        padding: EdgeInsets.zero,
+                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                    ],
+                                  ),
+                      ),
+                    ),
+                    
+                    // E) Buildable Sets Card
+                    _sectionHeader('SETS YOU CAN BUILD'),
+                    Card(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: _isLoading
+                            ? Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              )
+                            : (_data['buildableSets'] == 0 && _data['topSet'] == null)
+                                ? Text(
+                                    'Add more bricks to your inventory to see buildable sets',
+                                    style: TextStyle(color: Colors.grey.shade600),
+                                  )
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(
+                                            '${_data['buildableSets']}',
+                                            style: const TextStyle(
+                                              fontSize: 40,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFFFFD700),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'sets are 50%+\ncomplete',
+                                                  style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 14),
+                                                ),
+                                                Text(
+                                                  'based on your inventory',
+                                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (_data['topSet'] != null) ...[
+                                        const Divider(height: 24),
+                                        Text(
+                                          'TOP MATCH',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.grey.shade600,
+                                            letterSpacing: 1.2,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _data['topSet']['name'] ?? 'Unknown Set',
+                                                style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 15),
+                                              ),
+                                            ),
+                                            Text(
+                                              '${_data['topSet']['completion_percentage'] ?? 0}%',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 15,
+                                                color: Color(0xFFFFD700),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: LinearProgressIndicator(
+                                            value: (_data['topSet']['completion_percentage'] ?? 0) / 100,
+                                            backgroundColor: Colors.grey[200],
+                                            color: const Color(0xFFFFD700),
+                                            minHeight: 8,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                      ),
+                    ),
+                    
+                    // F) Quick Actions
+                    _sectionHeader('QUICK ACTIONS'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: widget.onScanTap,
+                            icon: const Icon(Icons.camera_alt, color: Colors.black),
+                            label: const Text('Scan Now', style: TextStyle(color: Colors.black)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFD700),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: widget.onInventoryTap,
+                            icon: const Icon(Icons.inventory_2, color: Color(0xFFFFD700)),
+                            label: const Text('Inventory', style: TextStyle(color: Color(0xFFFFD700))),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFFFFD700)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+  
+  Widget _buildStatCard(IconData icon, int value, String label) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Icon(icon, size: 28, color: const Color(0xFFFFD700)),
+            const SizedBox(height: 8),
+            _isLoading
+                ? Container(
+                    height: 22,
+                    width: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  )
+                : TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: value.toDouble()),
+                    duration: const Duration(milliseconds: 800),
+                    builder: (context, animValue, child) {
+                      return Text(
+                        animValue.toInt().toString(),
+                        style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 22),
+                      );
+                    },
+                  ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  String _formatDate(String? dateStr) {
+    if (dateStr == null) return '';
+    try {
+      final dt = DateTime.parse(dateStr);
+      final months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+      final minute = dt.minute.toString().padLeft(2, '0');
+      final period = dt.hour >= 12 ? 'PM' : 'AM';
+      return '${months[dt.month]} ${dt.day}, ${dt.year} • $hour:$minute $period';
+    } catch (e) {
+      return dateStr;
+    }
   }
 }
 
@@ -1451,7 +1882,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // Navigate to favorites
             }),
             _profileTile(Icons.settings, 'Settings', () {
-              // Navigate to settings
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
             }),
             _profileTile(Icons.help, 'Help & Support', () {
               // Navigate to help
@@ -1507,6 +1941,628 @@ class _ProfileScreenState extends State<ProfileScreen> {
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: onTap,
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settings Screen
+// ---------------------------------------------------------------------------
+
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+  
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _backendOnline = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _checkBackendStatus();
+  }
+  
+  Future<void> _checkBackendStatus() async {
+    try {
+      final result = await ApiService.getHealth();
+      setState(() {
+        _backendOnline = result['status'] == 'healthy' || result['status'] == 'degraded';
+      });
+    } catch (e) {
+      setState(() {
+        _backendOnline = false;
+      });
+    }
+  }
+  
+  void _showChangePasswordSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => const _ChangePasswordSheet(),
+    );
+  }
+  
+  Future<void> _exportInventory() async {
+    try {
+      final jsonString = await ApiService.exportInventory();
+      if (!mounted) return;
+      
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Inventory Data'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: SelectableText(jsonString),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: jsonString));
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✓ Copied to clipboard'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFFD700)),
+              child: const Text('Copy All', style: TextStyle(color: Colors.black)),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to export: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+  
+  Future<void> _clearScanHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Scan History?'),
+        content: const Text('All your scan history will be permanently deleted. This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      try {
+        await ApiService.clearScanHistory();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Scan history cleared'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to clear: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Settings', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ACCOUNT Section
+          Text('ACCOUNT', style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.lock_outline, color: Color(0xFFFFD700)),
+              title: const Text('Change Password'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _showChangePasswordSheet,
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // DATA & PRIVACY Section
+          Text('DATA & PRIVACY', style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.download_outlined, color: Color(0xFFFFD700)),
+                  title: const Text('Export Inventory'),
+                  subtitle: const Text('Download your inventory as JSON'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _exportInventory,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text('Clear Scan History', style: TextStyle(color: Colors.red)),
+                  subtitle: const Text('This cannot be undone'),
+                  onTap: _clearScanHistory,
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // ABOUT Section
+          Text('ABOUT', style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.info_outline, color: Color(0xFFFFD700)),
+                  title: const Text('App Version'),
+                  trailing: Text('2.0.0', style: TextStyle(color: Colors.grey.shade600)),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.group_outlined, color: Color(0xFFFFD700)),
+                  title: const Text('Team'),
+                  trailing: Text('NextGen Solutions', style: TextStyle(color: Colors.grey.shade600)),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.cloud_outlined, color: Color(0xFFFFD700)),
+                  title: const Text('Backend'),
+                  trailing: Chip(
+                    label: Text(_backendOnline ? 'Connected' : 'Offline'),
+                    backgroundColor: _backendOnline ? Colors.green.shade100 : Colors.red.shade100,
+                    labelStyle: TextStyle(
+                      color: _backendOnline ? Colors.green.shade800 : Colors.red.shade800,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    padding: EdgeInsets.zero,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Change Password Bottom Sheet
+class _ChangePasswordSheet extends StatefulWidget {
+  const _ChangePasswordSheet();
+  
+  @override
+  State<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
+}
+
+class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
+  final _oldPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _isLoading = false;
+  
+  @override
+  void dispose() {
+    _oldPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+  
+  Future<void> _updatePassword() async {
+    final oldPassword = _oldPasswordController.text;
+    final newPassword = _newPasswordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+    
+    // Validation
+    if (oldPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('All fields are required'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    
+    if (newPassword != confirmPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password must be at least 6 characters'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    
+    setState(() => _isLoading = true);
+    
+    try {
+      final result = await ApiService.changePassword(
+        currentPassword: oldPassword,
+        newPassword: newPassword,
+      );
+      
+      if (!mounted) return;
+      
+      if (result['success'] == true) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Password updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['error'] ?? 'Failed to update password'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Change Password', style: GoogleFonts.nunito(fontSize: 20, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _oldPasswordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Current Password',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock_outline),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _newPasswordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'New Password',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _confirmPasswordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Confirm New Password',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock),
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _isLoading ? null : _updatePassword,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD700),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                  )
+                : const Text('Update Password', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scan History Screen
+// ---------------------------------------------------------------------------
+
+class ScanHistoryScreen extends StatefulWidget {
+  const ScanHistoryScreen({super.key});
+  @override
+  State<ScanHistoryScreen> createState() => _ScanHistoryScreenState();
+}
+
+class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
+  List<dynamic> _history = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final history = await ApiService.getScanHistory();
+      setState(() {
+        _history = history;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load scan history: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Color _colorFromName(String? colorName) {
+    switch (colorName?.toLowerCase()) {
+      case 'red': return Colors.red;
+      case 'orange': return Colors.orange;
+      case 'yellow': return Colors.yellow;
+      case 'lime green': return Colors.lightGreen;
+      case 'green': return Colors.green;
+      case 'dark green': return Colors.green.shade800;
+      case 'blue': return Colors.blue;
+      case 'dark blue': return Colors.blue.shade900;
+      case 'light blue': return Colors.lightBlue;
+      case 'purple': return Colors.purple;
+      case 'white': return Colors.white;
+      case 'light gray': return Colors.grey.shade300;
+      case 'dark gray': return Colors.grey.shade700;
+      case 'black': return Colors.black;
+      case 'brown': return const Color(0xFF795548);
+      case 'tan': return const Color(0xFFD2B48C);
+      default: return Colors.grey;
+    }
+  }
+
+  Future<void> _addScanToInventory(List<dynamic> scanResults) async {
+    if (scanResults.isEmpty) return;
+
+    final bricks = scanResults.map((brick) => {
+      'id': brick['brick_id'] ?? brick['id'] ?? '0000',
+      'name': brick['brick_name'] ?? brick['name'] ?? brick['class'] ?? 'Unknown',
+      'color': brick['color'] ?? 'Unknown',
+      'quantity': brick['count'] ?? brick['quantity'] ?? 1,
+    }).toList();
+
+    try {
+      final result = await ApiService.updateInventory(bricks);
+      if (result['success'] == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Row(children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 8),
+            Text('✓ Bricks added to inventory'),
+          ]),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to add to inventory: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Scan History', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadHistory,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: LegoApp.legoYellow))
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, size: 60, color: Colors.red),
+                        const SizedBox(height: 16),
+                        Text(_errorMessage!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _loadHistory,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _history.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.history, size: 80, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text('No scans yet.\nGo detect some bricks!', style: TextStyle(color: Colors.grey.shade600, fontSize: 16), textAlign: TextAlign.center),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadHistory,
+                      color: LegoApp.legoYellow,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _history.length,
+                        itemBuilder: (context, index) {
+                          final scan = _history[index];
+                          final scanDate = scan['scan_date'] ?? scan['date'] ?? '';
+                          final totalBricks = scan['total_bricks'] ?? 0;
+                          final uniqueTypes = scan['unique_types'] ?? 0;
+                          
+                          List<dynamic> scanResults = [];
+                          try {
+                            final results = scan['scan_results'] ?? scan['results'];
+                            if (results is String) {
+                              scanResults = jsonDecode(results);
+                            } else if (results is List) {
+                              scanResults = results;
+                            }
+                          } catch (e) {
+                            scanResults = [];
+                          }
+
+                          String formattedDate = scanDate;
+                          try {
+                            final dt = DateTime.parse(scanDate);
+                            final months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                            final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+                            final minute = dt.minute.toString().padLeft(2, '0');
+                            final period = dt.hour >= 12 ? 'PM' : 'AM';
+                            formattedDate = '${months[dt.month]} ${dt.day}, ${dt.year} • $hour:$minute $period';
+                          } catch (e) {
+                            formattedDate = scanDate.toString().substring(0, scanDate.length > 16 ? 16 : scanDate.length);
+                          }
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: ExpansionTile(
+                              leading: CircleAvatar(
+                                backgroundColor: LegoApp.legoYellow,
+                                child: const Icon(Icons.document_scanner, color: Colors.black),
+                              ),
+                              title: Text(formattedDate, style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16)),
+                              subtitle: Text('$totalBricks bricks • $uniqueTypes types', style: TextStyle(color: Colors.grey.shade600)),
+                              trailing: Chip(
+                                label: Text('$totalBricks bricks', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                backgroundColor: LegoApp.legoYellow.withValues(alpha: 0.2),
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              children: [
+                                if (scanResults.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Text('No result details available', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey.shade600)),
+                                  )
+                                else
+                                  ...scanResults.map((brick) {
+                                    final brickName = brick['brick_name'] ?? brick['name'] ?? brick['class'] ?? 'Unknown';
+                                    final confidence = (brick['confidence'] ?? 0) as num;
+                                    final count = brick['count'] ?? brick['quantity'] ?? 1;
+                                    final color = brick['color'] ?? 'Unknown';
+
+                                    return ListTile(
+                                      leading: CircleAvatar(radius: 8, backgroundColor: _colorFromName(color)),
+                                      title: Text(brickName, style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
+                                      subtitle: Text('Confidence: ${(confidence * 100).toStringAsFixed(1)}%'),
+                                      trailing: Text('x$count', style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16)),
+                                    );
+                                  }),
+                                if (scanResults.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: TextButton.icon(
+                                        onPressed: () => _addScanToInventory(scanResults),
+                                        icon: const Icon(Icons.add_circle_outline),
+                                        label: const Text('Add All to Inventory'),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: LegoApp.legoBlue,
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
     );
   }
 }
