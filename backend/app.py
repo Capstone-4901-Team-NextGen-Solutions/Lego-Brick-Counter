@@ -21,6 +21,7 @@ from brick_detector import BrickDetector
 from pinecone_service import PineconeService
 from color_detector import HSVColorClassifier
 
+
 # Try to import Azure detector (optional)
 try:
     from azure_detector import AzureDetector
@@ -1081,26 +1082,7 @@ def find_similar():
     results = pinecone_svc.find_similar_bricks(brick, top_k=10)
     return jsonify({"success": True, "similar_bricks": results, "count": len(results)})
 
-@app.route("/api/recommendations", methods=["GET"])
-@handle_errors
-def recommendations():
-    """Get LEGO set recommendations"""
-    limit = min(request.args.get("limit", 5, type=int), 20)
-    
-    if pinecone_svc.enabled:
-        user_id = request.headers.get("X-User-Id", "default_user")
-        inv = pinecone_svc.get_inventory(user_id)
-        if inv:
-            recs = pinecone_svc.recommend_sets(inv, top_k=limit)
-            if recs:
-                return jsonify({"recommendations": recs, "source": "pinecone"})
-    
-    # Fallback
-    fallback = [
-        {"set_id": "10698", "name": "Classic Creative Brick Box", "completion_percentage": 85},
-        {"set_id": "31134", "name": "Space Rocket", "completion_percentage": 72},
-    ]
-    return jsonify({"recommendations": fallback[:limit], "source": "local"})
+
 
 @app.route("/api/brick/<brick_id>", methods=["GET"])
 @handle_errors
@@ -1151,3 +1133,7 @@ def internal_error(e):
 # Entrypoint
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
+
+#recommendations_routes import
+from recommendations_routes import register_recommendations
+register_recommendations(app, InventoryItem, pinecone_svc, token_required, _now_iso)
