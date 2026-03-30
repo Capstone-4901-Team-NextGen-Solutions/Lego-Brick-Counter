@@ -1,4 +1,4 @@
-# azure_detector.py - Azure Custom Vision LEGO Brick Detector with Color Detection
+# azure_detector.py 
 
 import os
 import cv2
@@ -8,77 +8,17 @@ from typing import List, Dict
 from azure.cognitiveservices.vision.customvision.prediction import CustomVisionPredictionClient
 from msrest.authentication import ApiKeyCredentials
 
+# Import your color classifier
+from color_detector import HSVColorClassifier
+
 logger = logging.getLogger(__name__)
 
 
 class AzureDetector:
-    """
-    Azure Custom Vision-based LEGO brick detector with integrated color detection.
-    Drop-in replacement for BrickDetector class (same interface).
-    """
+    """Azure Custom Vision-based LEGO brick detector with improved color detection"""
 
-    # LEGO part number mapping for 50 Azure classes
-    LEGO_ID_MAP = {
-        # Bricks
-        'Brick 1 x 1': '3005',
-        'Brick 1 x 1 x 5': '2453',
-        'Brick 1 x 10': '6111',
-        'Brick 1 x 2': '3004',
-        'Brick 1 x 2 x 2': '3245',
-        'Brick 1 x 2 x 5': '2454',
-        'Brick 1 x 3': '3622',
-        'Brick 1 x 4': '3010',
-        'Brick 1 x 6': '3009',
-        'Brick 1 x 8': '3008',
-        'Brick 2 x 2': '3003',
-        'Brick 2 x 2 Corner': '2357',
-        'Brick 2 x 2 Slope': '3039',
-        'Brick 2 x 3': '3002',
-        'Brick 2 x 4': '3001',
-        'Brick 2 x 6': '2456',
-        'Brick 2 x 8': '3007',
-        
-        # Plates
-        'Plate 1 x 1': '3024',
-        'Plate 1 x 1 Round': '4073',
-        'Plate 1 x 10': '4477',
-        'Plate 1 x 12': '60479',
-        'Plate 1 x 2': '3023',
-        'Plate 1 x 3': '3623',
-        'Plate 1 x 4': '3710',
-        'Plate 1 x 6': '3666',
-        'Plate 1 x 8': '3460',
-        'Plate 2 x 10': '3832',
-        'Plate 2 x 12': '2445',
-        'Plate 2 x 16': '4282',
-        'Plate 2 x 2': '3022',
-        'Plate 2 x 2 Corner': '2420',
-        'Plate 2 x 3': '3021',
-        'Plate 2 x 4': '3020',
-        'Plate 2 x 6': '3795',
-        'Plate 2 x 8': '3034',
-        'Plate 3 x 3': '11212',
-        'Plate 4 x 4': '3031',
-        'Plate 4 x 4 Corner': '2639',
-        'Plate 4 x 6': '3032',
-        'Plate 4 x 8': '3035',
-        'Plate 6 x 10': '3033',
-        'Plate 6 x 6': '3958',
-        
-        # Tiles
-        'Tile 1 x 3': '63864',
-        'Tile 1 x 4': '2431',
-        'Tile 1 x 6': '6636',
-        'Tile 1 x 8': '4162',
-        'Tile 2 x 2': '3068',
-        'Tile 2 x 4': '87079',
-        
-        # Legacy/fallback
-        '2x4 Brick': '3001',
-        '2x2 Brick': '3003',
-        '1x2 Plate': '3023',
-        'lego_brick': '3001',
-    }
+    # LEGO part number mapping 
+    LEGO_ID_MAP = { ... }  # Your existing mapping
 
     def __init__(
         self,
@@ -95,6 +35,9 @@ class AzureDetector:
         self.project_id = project_id or os.getenv('AZURE_CV_PROJECT_ID')
         self.published_name = published_name or os.getenv('AZURE_CV_PUBLISHED_NAME', 'Iteration2')
         self.conf_threshold = conf_threshold
+        
+        # Initialize color classifier once
+        self.color_classifier = HSVColorClassifier()
         
         # Validate credentials
         if not all([self.prediction_key, self.prediction_endpoint, self.project_id]):
@@ -143,7 +86,6 @@ class AzureDetector:
             
             # Process predictions
             detections = []
-            brick_counts = {}
             
             for pred in results.predictions:
                 # Filter by confidence threshold
@@ -166,12 +108,11 @@ class AzureDetector:
                 w = max(1, min(w, img_width - x))
                 h = max(1, min(h, img_height - y))
                 
-                # Count occurrences
-                brick_counts[brick_name] = brick_counts.get(brick_name, 0) + 1
-                
                 # Extract ROI for color detection
                 roi = image[y:y+h, x:x+w]
-                color = self._detect_colour(roi)
+                
+                # Use the better color detection method
+                color = self._detect_brick_color(roi)
                 
                 # Map to LEGO part number
                 brick_id = self._map_to_lego_id(brick_name)
@@ -192,8 +133,26 @@ class AzureDetector:
             logger.error(f"❌ Azure detection failed: {str(e)}")
             raise
 
+    def _detect_brick_color(self, roi: np.ndarray) -> str:
+        """Improved color detection with inner cropping and median filtering"""
+        if roi is None or roi.size == 0 or roi.shape[0] < 5 or roi.shape[1] < 5:
+            return "Unknown"
+        
+        # Crop inner region to avoid edges and shadows
+        h, w = roi.shape[:2]
+        margin_x = int(w * 0.2)  # Crop 20% from edges
+        margin_y = int(h * 0.2)
+        
+        # Only crop if we have enough space
+        if margin_x > 0 and margin_y > 0 and w > margin_x*2 and h > margin_y*2:
+            roi = roi[margin_y:h-margin_y, margin_x:w-margin_x]
+        
+        # Use the HSVColorClassifier for better results
+        return self.color_classifier.get_dominant_color(roi)
+
     def _map_to_lego_id(self, brick_name: str) -> str:
         """Map Azure tag name to LEGO part number"""
+        # Your existing mapping logic
         if brick_name in self.LEGO_ID_MAP:
             return self.LEGO_ID_MAP[brick_name]
         
@@ -207,51 +166,3 @@ class AzureDetector:
                 return value
         
         return '0000'
-
-    @staticmethod
-    def _detect_colour(roi: np.ndarray) -> str:
-        """Detect LEGO color from ROI using HSV"""
-        if roi.size == 0 or roi.shape[0] < 5 or roi.shape[1] < 5:
-            return "Unknown"
-        
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        h = float(np.mean(hsv[:, :, 0]))
-        s = float(np.mean(hsv[:, :, 1]))
-        v = float(np.mean(hsv[:, :, 2]))
-        
-        # Grayscale colors
-        if s < 40:
-            if v < 50:
-                return "Black"
-            elif v > 200:
-                return "White"
-            elif v > 150:
-                return "Light Gray"
-            else:
-                return "Dark Gray"
-        
-        # Brown
-        if s < 100 and 10 <= h <= 25 and 50 < v < 150:
-            return "Brown"
-        
-        # Chromatic colors
-        if h < 10 or h > 170:
-            return "Red"
-        if 10 <= h < 20:
-            return "Orange"
-        if 20 <= h < 35:
-            return "Yellow"
-        if 35 <= h < 50:
-            return "Lime"
-        if 50 <= h < 85:
-            return "Green"
-        if 85 <= h < 100:
-            return "Cyan"
-        if 100 <= h < 130:
-            return "Blue"
-        if 130 <= h < 150:
-            return "Purple"
-        if 150 <= h < 170:
-            return "Magenta"
-        
-        return "Unknown"
