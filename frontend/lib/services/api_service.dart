@@ -144,32 +144,7 @@ class ApiService {
     'new_password': newPassword,
   }));
 
-  // -------------------------------------------------------------------
-  // Authenticated inventory methods
-  // -------------------------------------------------------------------
-  
-  static Future<Map<String, dynamic>> addToInventory(List<Map<String, dynamic>> bricks) async =>
-      _authRequest('POST', '/inventory', body: json.encode({'bricks': bricks}));
-
-  static Future<Map<String, dynamic>> updateInventoryItem(
-    String brickId, {
-    String? color,
-    int? quantity,
-    String? name,
-  }) async => _authRequest('PUT', '/inventory/$brickId', body: json.encode({
-    if (color != null) 'color': color,
-    if (quantity != null) 'quantity': quantity,
-    if (name != null) 'name': name,
-  }));
-
-  static Future<Map<String, dynamic>> deleteInventoryItem(
-    String brickId, {
-    String color = 'Unknown',
-  }) async => _authRequest('DELETE', '/inventory/$brickId?color=$color');
-
-  // -------------------------------------------------------------------
-  // Private helpers 
-  // -------------------------------------------------------------------
+  // ── Private helpers ─────────────────────────────────────────────
 
   /// Wraps any HTTP GET call with consistent error handling.
   static Future<Map<String, dynamic>> _safeGet(String path) async {
@@ -277,13 +252,12 @@ class ApiService {
     return {'success': false, 'error': 'Server error (${streamed.statusCode}): $body'};
   }
 
-  // ── Inventory ───────────────────────────────────────────────────
+  // ── Inventory (ONLY ONE DEFINITION EACH) ───────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getInventory() async =>
       _authRequest('GET', '/inventory');
 
-  static Future<Map<String, dynamic>> addToInventory(
-          List<Map<String, dynamic>> bricks) async =>
+  static Future<Map<String, dynamic>> addToInventory(List<Map<String, dynamic>> bricks) async =>
       _authRequest('POST', '/inventory', body: json.encode({'bricks': bricks}));
 
   static Future<Map<String, dynamic>> updateInventory(
@@ -314,11 +288,10 @@ class ApiService {
 
   // ── Recommendations ─────────────────────────────────────────────
 
-  // Fixed: was using _safeGet (no auth), now uses _authRequest
   static Future<Map<String, dynamic>> getRecommendations() async =>
       _authRequest('GET', '/recommendations');
 
-  // ── Scan history ────────────────────────────────────────────────
+  // ── Scan history (ONLY ONE DEFINITION) ────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getScanHistory({int limit = 20}) async =>
       _authRequest('GET', '/scan-history?limit=$limit');
@@ -368,22 +341,6 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getPineconeStats() async =>
       _safeGet('/pinecone/stats');
-
-  /// Get user's scan history with detection results.
-  static Future<List<dynamic>> getScanHistory() async {
-    try {
-      final result = await _authRequest('GET', '/scan-history');
-      if (result['success'] == true && result['scans'] != null) {
-        final scans = result['scans'];
-        if (scans is List) {
-          return List<dynamic>.from(scans);
-        }
-      }
-      return [];
-    } catch (e) {
-      throw Exception('Failed to load scan history: $e');
-    }
-  }
 
   /// Clear all scan history for current user
   static Future<void> clearScanHistory() async {
@@ -475,4 +432,3 @@ class ApiService {
     }
   }
 }
-

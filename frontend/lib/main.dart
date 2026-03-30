@@ -2352,19 +2352,40 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
     });
 
     try {
-      final history = await ApiService.getScanHistory();
-      setState(() {
-        _history = history;
-        _isLoading = false;
-      });
+      // This returns Map<String, dynamic>
+      final result = await ApiService.getScanHistory();
+      
+      // Extract the 'scans' list from the result
+      if (result['success'] == true && result['scans'] != null) {
+        final scans = result['scans'];
+        if (scans is List) {
+          setState(() {
+            _history = scans;
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _history = [];
+            _isLoading = false;
+          });
+        }
+      } else {
+        setState(() {
+          _history = [];
+          _isLoading = false;
+          _errorMessage = result['error'] ?? 'Failed to load scan history';
+        });
+      }
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to load scan history: $e';
         _isLoading = false;
+        _history = [];
       });
     }
   }
 
+  // Rest of your code remains the same...
   Color _colorFromName(String? colorName) {
     switch (colorName?.toLowerCase()) {
       case 'red': return Colors.red;
