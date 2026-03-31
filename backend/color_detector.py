@@ -1,139 +1,165 @@
 import cv2
 import numpy as np
 
-# Try to import sklearn for K-Means clustering
-try:
-    from sklearn.cluster import KMeans
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
 
-
-class HSVColorClassifier:
+class LegoColorClassifier:
     def __init__(self):
-        # LEGO color reference palette in RGB (standard LEGO colors)
-        lego_rgb = {
-            'Red': (196, 40, 27),
-            'Orange': (218, 133, 65),
-            'Yellow': (240, 205, 97),
-            'Lime Green': (166, 202, 85),
-            'Green': (0, 143, 65),
-            'Dark Green': (0, 69, 26),
-            'Blue': (13, 105, 171),
-            'Dark Blue': (0, 32, 96),
-            'Light Blue': (104, 195, 226),
-            'Purple': (107, 50, 124),
-            'White': (242, 243, 242),
-            'Light Gray': (163, 162, 164),
-            'Dark Gray': (99, 95, 97),
-            'Black': (27, 42, 52),
-            'Brown': (88, 57, 39),
-            'Tan': (222, 198, 156),
+        self.lego_colors_rgb = {
+            'Red':         (196, 40,  27),
+            'Dark Red':    (114, 14,  15),
+            'Orange':      (218, 133, 65),
+            'Yellow':      (240, 205, 97),
+            'Lime Green':  (0,   175, 77),
+            'Green':       (0,   143, 65),
+            'Dark Green':  (0,   69,  26),
+            'Light Blue':  (104, 195, 226),
+            'Medium Blue': (115, 150, 200),
+            'Blue':        (13,  105, 171),
+            'Dark Blue':   (0,   32,  96),
+            'Sand Blue':   (90,  113, 132),
+            'Purple':      (107, 50,  124),
+            'Magenta':     (163, 0,   91),
+            'White':       (242, 243, 242),
+            'Light Gray':  (163, 162, 164),
+            'Dark Gray':   (99,  95,  97),
+            'Black':       (27,  42,  52),
+            'Brown':       (88,  57,  39),
+            'Dark Tan':    (143, 121, 86),
+            'Tan':         (222, 198, 156),
         }
-        
-        # Convert RGB reference palette to Lab color space
-        self.lego_colors_lab = {}
-        for name, rgb in lego_rgb.items():
-            # Create a 1x1 BGR image (OpenCV uses BGR)
-            bgr = np.array([[[rgb[2], rgb[1], rgb[0]]]], dtype=np.uint8)
-            # Convert to Lab
-            lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2Lab)
-            # Store as float array [L, a, b]
-            self.lego_colors_lab[name] = lab[0, 0].astype(np.float32)
+        self.lego_lab_palette = {}
+        for name, rgb in self.lego_colors_rgb.items():
+            self.lego_lab_palette[name] = self.rgb_to_lab(rgb)
+        self.debug = False
 
-    def get_dominant_color(self, crop_bgr):
-        """Extract dominant color from a BGR crop using K-Means in Lab space with CLAHE preprocessing"""
+    @staticmethod
+    def rgb_to_lab(rgb):
+        r, g, b = rgb
+        patch = np.uint8([[[b, g, r]]])
+        lab = cv2.cvtColor(patch, cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
+        return lab
+
+    def _safe_crop(self, img, margin_ratio=0.12):
+        h, w = img.shape[:2]
+        if h < 12 or w < 12:
+            return img
+        my = int(h * margin_ratio)
+        mx = int(w * margin_ratio)
+        return img[my:h-my, mx:w-mx]
+
+    def _center_mask(self, shape, radius_ratio=0.42):
+        h, w = shape[:2]
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cx, cy = w // 2, h // 2
+        rx, ry = int(w * radius_ratio), int(h * radius_ratio)
+        cv2.ellipse(mask, (cx, cy), (rx, ry), 0, 0, 360, 255, -1)
+        return mask > 0
+
+    def _build_brick_mask(self, img_bgr):
+        hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+        lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+        H, S, V = cv2.split(hsv)
+        L, A, B = cv2.split(lab)
+        center = self._center_mask(img_bgr.shape)
+        not_glare = ~((V > 245) & (S < 30))
+        not_deep_shadow = V > 20
+        chromatic = S > 35
+        neutral = (S <= 35) & (L > 35) & (L < 240)
+        mask = center & not_glare & not_deep_shadow & (chromatic | neutral)
+        return mask
+
+    def _robust_representative_lab(self, img_bgr, mask):
+        lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+        pixels = lab[mask]
+        if len(pixels) < 40:
+            return None
+        low = np.percentile(pixels, 10, axis=0)
+        high = np.percentile(pixels, 90, axis=0)
+        keep = np.all((pixels >= low) & (pixels <= high), axis=1)
+        trimmed = pixels[keep]
+        if len(trimmed) < 20:
+            trimmed = pixels
+        return np.median(trimmed, axis=0)
+
+    def _lab_distance(self, a, b):
+        dL = a[0] - b[0]
+        da = a[1] - b[1]
+        db = a[2] - b[2]
+        return np.sqrt((0.8 * dL) ** 2 + (1.2 * da) ** 2 + (1.2 * db) ** 2)
+
+    def _neutral_override(self, rep_lab):
+        L, A, B = rep_lab
+        chroma = np.sqrt((A - 128) ** 2 + (B - 128) ** 2)
+        if L < 55 and chroma < 18:
+            return 'Black'
+        if L > 220 and chroma < 15:
+            return 'White'
+        if 150 < L <= 220 and chroma < 16:
+            return 'Light Gray'
+        if 70 < L <= 150 and chroma < 16:
+            return 'Dark Gray'
+        return None
+
+    def classify_crop(self, crop_bgr):
         if crop_bgr is None or crop_bgr.size == 0:
             return 'Unknown'
-        
-        # Resize for speed
-        resized = cv2.resize(crop_bgr, (80, 80))
-        
-        # Convert to Lab color space
-        lab = cv2.cvtColor(resized, cv2.COLOR_BGR2Lab)
-        
-        # Apply CLAHE to L channel only to normalize lighting
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
-        lab[:, :, 0] = clahe.apply(lab[:, :, 0])
-        
-        # Reshape to pixel array (N, 3) where N = 80*80
-        pixels = lab.reshape(-1, 3).astype(np.float32)
-        
-        # Filter out near-white background pixels (L > 90, a and b near 0)
-        # and near-black shadow pixels (L < 15)
-        L = pixels[:, 0]
-        a = pixels[:, 1]
-        b = pixels[:, 2]
-        
-        # Keep pixels that are NOT near-white and NOT near-black
-        mask = ~((L > 90) & (np.abs(a - 128) < 5) & (np.abs(b - 128) < 5)) & (L >= 15)
-        filtered_pixels = pixels[mask]
-        
-        # If too few pixels remain, use all pixels
-        if len(filtered_pixels) < 50:
-            filtered_pixels = pixels
-        
-        # Find representative color
-        if SKLEARN_AVAILABLE and len(filtered_pixels) >= 3:
-            # Use K-Means clustering to find dominant color
-            try:
-                kmeans = KMeans(n_clusters=min(3, len(filtered_pixels)), n_init=5, random_state=0)
-                kmeans.fit(filtered_pixels)
-                
-                # Find the largest cluster
-                labels = kmeans.labels_
-                unique, counts = np.unique(labels, return_counts=True)
-                largest_cluster_idx = unique[np.argmax(counts)]
-                
-                # Get centroid of largest cluster
-                representative_color = kmeans.cluster_centers_[largest_cluster_idx]
-            except Exception:
-                # Fallback to median if K-Means fails
-                representative_color = np.median(filtered_pixels, axis=0)
-        else:
-            # Fallback: use median of all non-background pixels
-            representative_color = np.median(filtered_pixels, axis=0)
-        
-        # Find closest LEGO color using Euclidean distance in Lab space
-        min_distance = float('inf')
-        closest_color = 'Unknown'
-        
-        for name, lab_ref in self.lego_colors_lab.items():
-            distance = np.linalg.norm(representative_color - lab_ref)
-            if distance < min_distance:
-                min_distance = distance
-                closest_color = name
-        
-        return closest_color
+        crop_bgr = self._safe_crop(crop_bgr, margin_ratio=0.12)
+        crop_bgr = cv2.resize(crop_bgr, (96, 96), interpolation=cv2.INTER_AREA)
+        mask = self._build_brick_mask(crop_bgr)
+        rep_lab = self._robust_representative_lab(crop_bgr, mask)
+        if rep_lab is None:
+            return 'Unknown'
+        neutral_guess = self._neutral_override(rep_lab)
+        if neutral_guess is not None:
+            return neutral_guess
+        best_name = 'Unknown'
+        best_dist = float('inf')
+        for name, ref_lab in self.lego_lab_palette.items():
+            dist = self._lab_distance(rep_lab, ref_lab)
+            if dist < best_dist:
+                best_dist = dist
+                best_name = name
+        if self.debug:
+            print(f'[ColorDebug] Rep Lab: {rep_lab}, best={best_name}, dist={best_dist:.2f}')
+        return best_name
+
+    # ── public interface (keeps app.py call sites unchanged) ──────────────
+
+    def get_dominant_color(self, crop_bgr):
+        """Public method — accepts a BGR numpy array crop, returns color name string."""
+        return self.classify_crop(crop_bgr)
 
     def detect_color_from_image(self, image_path):
-        """Detect dominant color from full image (used when no bounding box available)"""
+        """Public method — detects color from full image using center 60% crop."""
         img = cv2.imread(image_path)
         if img is None:
             return 'Unknown'
-        
         h, w = img.shape[:2]
-        # Use center 60% of image to avoid background
         cy, cx = h // 2, w // 2
         crop = img[int(cy * 0.2):int(cy * 1.8), int(cx * 0.2):int(cx * 1.8)]
-        
-        return self.get_dominant_color(crop)
+        return self.classify_crop(crop)
 
     def detect_color_from_bbox(self, image_path, bbox):
-        """Detect color from bounding box region: bbox = (left, top, width, height) normalized 0-1"""
+        """Public method — detects color from normalized bounding box region."""
         img = cv2.imread(image_path)
         if img is None:
             return 'Unknown'
-        
         ih, iw = img.shape[:2]
         x1 = int(bbox.get('left', 0) * iw)
         y1 = int(bbox.get('top', 0) * ih)
         x2 = int((bbox.get('left', 0) + bbox.get('width', 1)) * iw)
         y2 = int((bbox.get('top', 0) + bbox.get('height', 1)) * ih)
-        
-        # Clamp to image boundaries
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(iw, x2), min(ih, y2)
-        
+        if (x2 - x1) < 10 or (y2 - y1) < 10:
+            if self.debug:
+                print(f'[ColorDebug] Bbox too small ({x2-x1}x{y2-y1}), falling back to full image')
+            return self.detect_color_from_image(image_path)
+        if self.debug:
+            print(f'[ColorDebug] Using bbox crop: ({x1},{y1}) to ({x2},{y2}) on {ih}x{iw} image')
         crop = img[y1:y2, x1:x2]
-        return self.get_dominant_color(crop)
+        return self.classify_crop(crop)
+
+
+# Backwards-compatible alias so any code referencing HSVColorClassifier still works
+HSVColorClassifier = LegoColorClassifier

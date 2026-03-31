@@ -19,7 +19,7 @@ import numpy as np
 
 from brick_detector import BrickDetector
 from pinecone_service import PineconeService
-from color_detector import HSVColorClassifier
+from color_detector import LegoColorClassifier
 
 # Try to import Azure detector (optional)
 try:
@@ -213,17 +213,18 @@ if AZURE_AVAILABLE:
 if detector is None:
     try:
         detector = BrickDetector(
-            model_path="best.onnx",
+            model_path="models/best.onnx",
             conf_threshold=0.12,
             iou_threshold=0.45,
         )
         detector_type = "ONNX"
         logger.info("ONNX Brick detector ready")
     except Exception as exc:
-        logger.warning(f"ONNX Detector unavailable ({exc}) - place best.onnx in backend/")
+        logger.warning(f"ONNX Detector unavailable ({exc}) - place best.onnx in backend/models/")
 
 # Initialize color classifier
-color_classifier = HSVColorClassifier()
+color_classifier = LegoColorClassifier()
+color_classifier.debug = True  # TODO: remove before final demo
 logger.info("Color classifier initialized")
 
 # Pinecone
@@ -988,6 +989,127 @@ def upload_image(current_user):
         "pinecone_synced": pinecone_svc.enabled,
         "timestamp": _now_iso(),
     })
+
+@app.route("/api/detect/onnx", methods=["POST"])
+@token_required
+def detect_with_onnx(current_user):
+    """Detect bricks using local ONNX YOLOv8 model"""
+    try:
+        # Check detector is loaded
+        if detector is None:
+            return jsonify({
+                'success': False,
+                'error': 'ONNX model not loaded. Check that best.onnx exists in the backend/models folder.',
+                'detector_used': 'ONNX YOLOv8'
+            }), 503
+
+        # Get uploaded file — same pattern as /api/upload
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+        if not _allowed(file.filename):
+            return jsonify({'success': False, 'error': 'File type not allowed'}), 400
+
+        # Save file
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        filename = f"onnx_scan_{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+        logger.info(f"[ONNX] File saved: {filepath}")
+
+        # Run ONNX detection
+        logger.info(f"[ONNX] Running detection on: {filepath}")
+        raw_results = detector.detect_bricks(filepath)
+        logger.info(f"[ONNX DEBUG] raw_results type: {type(raw_results)}")
+        logger.info(f"[ONNX DEBUG] raw_results count: {len(raw_results)}")
+        if raw_results:
+            logger.info(f"[ONNX DEBUG] first item type: {type(raw_results[0])}")
+            logger.info(f"[ONNX DEBUG] first item: {raw_results[0]}")
+
+        # Get image dimensions for bbox normalization
+        from PIL import Image as PILImage
+        img = PILImage.open(filepath)
+        img_w, img_h = img.size
+        logger.info(f"[ONNX] Image dimensions: {img_w}x{img_h}")
+
+        # Parse results - detect_bricks returns list of dicts with:
+        # {'id': str, 'name': str, 'color': str, 'quantity': int, 'confidence': float, 'bbox': [x, y, w, h]}
+        results = []
+        for r in raw_results:
+            # Extract bbox in [x, y, width, height] pixel format
+            raw_bbox = r.get('bbox', [])
+            
+            # Normalize bbox for color classifier (expects 0-1 range with left, top, width, height)
+            if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
+                normalized_bbox = {
+                    'left': raw_bbox[0] / img_w,
+                    'top': raw_bbox[1] / img_h,
+                    'width': raw_bbox[2] / img_w,
+                    'height': raw_bbox[3] / img_h,
+                }
+                logger.info(f"[ONNX] Normalized bbox: {normalized_bbox}")
+                color = color_classifier.detect_color_from_bbox(filepath, normalized_bbox)
+            else:
+                logger.warning(f"[ONNX] Invalid bbox format: {raw_bbox}, using full image for color")
+                color = color_classifier.detect_color_from_image(filepath)
+
+            results.append({
+                'brick_name': r.get('name', 'Unknown'),
+                'brick_id': r.get('id', '0000'),
+                'confidence': float(r.get('confidence', 0)),
+                'color': color,
+                'count': int(r.get('quantity', 1)),
+                'quantity': int(r.get('quantity', 1)),
+                'bounding_box': {
+                    'left': raw_bbox[0] / img_w if len(raw_bbox) >= 4 else 0,
+                    'top': raw_bbox[1] / img_h if len(raw_bbox) >= 4 else 0,
+                    'width': raw_bbox[2] / img_w if len(raw_bbox) >= 4 else 0,
+                    'height': raw_bbox[3] / img_h if len(raw_bbox) >= 4 else 0,
+                }
+            })
+            logger.info(f"[ONNX] Processed brick: {results[-1]['brick_name']} - {results[-1]['color']}")
+
+        total_bricks = sum(r['count'] for r in results)
+        unique_types = len(set(r['brick_name'] for r in results))
+
+        # Save to scan history — same pattern as /api/upload
+        try:
+            new_scan = ScanHistory(
+                user_id=current_user.id,
+                image_path=filepath,
+                total_bricks=total_bricks,
+                unique_types=unique_types,
+                scan_results=results
+            )
+            db.session.add(new_scan)
+            db.session.commit()
+            logger.info(f"[ONNX] Scan saved to history, id={new_scan.id}")
+        except Exception as db_err:
+            logger.warning(f"[ONNX] Could not save scan history: {db_err}")
+            db.session.rollback()
+
+        return jsonify({
+            'success': True,
+            'total_bricks': total_bricks,
+            'unique_types': unique_types,
+            'detector_used': 'ONNX YOLOv8',
+            'results': results,
+            'timestamp': _now_iso(),
+        })
+
+    except Exception as e:
+        logger.error(f"[ONNX] Detection error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': f'ONNX detection failed: {str(e)}',
+            'detector_used': 'ONNX YOLOv8'
+        }), 500
 
 # ---------------------------------------------------------------------------
 # ENDPOINTS 

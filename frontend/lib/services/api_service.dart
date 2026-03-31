@@ -526,5 +526,96 @@ class ApiService {
       throw Exception('YOLOv8 detection error: $e');
     }
   }
+
+  /// Detect bricks using ONNX YOLOv8 model
+  static Future<Map<String, dynamic>> detectWithOnnx(dynamic imageFile) async {
+    try {
+      if (kIsWeb) {
+        return await _detectWithOnnxWeb(imageFile);
+      } else {
+        return await _detectWithOnnxNative(imageFile);
+      }
+    } on TimeoutException {
+      return {
+        'success': false,
+        'error': 'Request timed out. Please try again.'
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to detect with ONNX: ${e.toString()}'
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> _detectWithOnnxWeb(XFile imageFile) async {
+    final auth = AuthService();
+    var request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/onnx'));
+    
+    // Add auth headers
+    request.headers.addAll(auth.authHeaders);
+    
+    final bytes = await imageFile.readAsBytes();
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: imageFile.name,
+    ));
+
+    var streamed = await request.send().timeout(timeout);
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode == 200) {
+      return json.decode(body);
+    }
+    if (streamed.statusCode == 401) {
+      await auth.logout();
+      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
+    }
+    if (streamed.statusCode == 503) {
+      return json.decode(body);
+    }
+    return {
+      'success': false,
+      'error': 'Server error (${streamed.statusCode}): $body'
+    };
+  }
+
+  static Future<Map<String, dynamic>> _detectWithOnnxNative(
+      XFile imageFile) async {
+    final auth = AuthService();
+    var request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/onnx'));
+    
+    // Add auth headers
+    request.headers.addAll(auth.authHeaders);
+    
+    final bytes = await imageFile.readAsBytes();
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: imageFile.name,
+    ));
+
+    var streamed = await request.send().timeout(timeout);
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode == 200) {
+      return json.decode(body);
+    }
+    if (streamed.statusCode == 401) {
+      await auth.logout();
+      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
+    }
+    if (streamed.statusCode == 503) {
+      return json.decode(body);
+    }
+    return {
+      'success': false,
+      'error': 'Server error (${streamed.statusCode}): $body'
+    };
+  }
 }
+
 

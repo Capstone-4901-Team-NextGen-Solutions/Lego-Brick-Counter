@@ -1131,6 +1131,11 @@ class _ScanScreenState extends State<ScanScreen> {
   String? _errorMessage;
   XFile? _selectedImage;
   List<dynamic> _detectionResults = [];
+  
+  // ONNX detection state
+  List<dynamic> _onnxResults = [];
+  bool _isDetectingOnnx = false;
+  String? _onnxError;
 
   // ---- actions ----
 
@@ -1140,6 +1145,9 @@ class _ScanScreenState extends State<ScanScreen> {
         _scannedBricks = [];
         _detectionResults = [];
         _isDetecting = false;
+        _onnxResults = [];
+        _onnxError = null;
+        _isDetectingOnnx = false;
       });
 
   Future<void> _pickImage(ImageSource source) async {
@@ -1254,6 +1262,89 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
   
+  Future<void> _detectWithOnnx() async {
+    if (_selectedImage == null) return;
+    
+    setState(() {
+      _isDetectingOnnx = true;
+      _onnxError = null;
+      _onnxResults = [];
+    });
+
+    try {
+      final result = await ApiService.detectWithOnnx(_selectedImage!);
+      
+      if (result['success'] == true) {
+        setState(() {
+          _onnxResults = result['results'] ?? [];
+          _isDetectingOnnx = false;
+        });
+        
+        if (mounted && _onnxResults.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Text('ONNX found ${_onnxResults.length} brick(s)!'),
+            ]),
+            backgroundColor: const Color(0xFF1A1A2E),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ));
+        }
+      } else {
+        setState(() {
+          _onnxError = result['error'] ?? 'ONNX detection failed.';
+          _isDetectingOnnx = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(_onnxError!),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isDetectingOnnx = false;
+        _onnxError = e.toString();
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('ONNX Detection failed: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+  
+  Future<void> _addOnnxToInventory() async {
+    if (_onnxResults.isEmpty) return;
+    
+    final bricks = _onnxResults.map((brick) => {
+      'id': brick['brick_id'] ?? brick['id'] ?? '0000',
+      'name': brick['brick_name'] ?? brick['name'] ?? 'Unknown',
+      'color': brick['color'] ?? 'Unknown',
+      'quantity': brick['count'] ?? brick['quantity'] ?? 1,
+    }).toList();
+    
+    final result = await ApiService.addToInventory(bricks);
+    if (result['success'] == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Row(children: [
+          Icon(Icons.check_circle, color: Colors.white),
+          SizedBox(width: 8),
+          Text('✓ ONNX bricks added to inventory'),
+        ]),
+        backgroundColor: const Color(0xFF1A1A2E),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ));
+    }
+  }
+  
   Future<void> _addAllToInventory() async {
     if (_scannedBricks.isEmpty) return;
     
@@ -1318,6 +1409,10 @@ class _ScanScreenState extends State<ScanScreen> {
           _buildScanCard(),
           const SizedBox(height: 16),
           _buildResultsSection(),
+          if (_onnxResults.isNotEmpty || _onnxError != null) ...[
+            const SizedBox(height: 16),
+            _buildOnnxResultsSection(),
+          ],
           const SizedBox(height: 32),
         ],
       ),
@@ -1344,6 +1439,8 @@ class _ScanScreenState extends State<ScanScreen> {
           _imagePreviewArea(),
           const SizedBox(height: 16),
           if (_selectedImage != null) _detectButton(),
+          if (_selectedImage != null) const SizedBox(height: 8),
+          if (_selectedImage != null) _detectOnnxButton(),
           if (_selectedImage == null) ...[
             _actionButtons(),
             const SizedBox(height: 12),
@@ -1508,6 +1605,44 @@ class _ScanScreenState extends State<ScanScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: isEnabled ? const Color(0xFFFFD700) : Colors.grey,
           foregroundColor: Colors.black,
+          disabledBackgroundColor: Colors.grey.shade300,
+          disabledForegroundColor: Colors.grey.shade600,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+    );
+  }
+
+  Widget _detectOnnxButton() {
+    final isEnabled = _selectedImage != null && !_isDetectingOnnx;
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton.icon(
+        onPressed: isEnabled ? () {
+          HapticFeedback.lightImpact();
+          _detectWithOnnx();
+        } : null,
+        icon: _isDetectingOnnx
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.memory, color: Colors.white),
+        label: Text(
+          _isDetectingOnnx ? 'Running ONNX...' : 'Detect ONNX',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isEnabled ? const Color(0xFF1A1A2E) : Colors.grey,
+          foregroundColor: Colors.white,
           disabledBackgroundColor: Colors.grey.shade300,
           disabledForegroundColor: Colors.grey.shade600,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1714,6 +1849,205 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
+  Widget _buildOnnxResultsSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.memory, color: Color(0xFF1A1A2E), size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'ONNX YOLOv8 Results',
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF1A1A2E),
+                  ),
+                ),
+                const Spacer(),
+                if (_onnxResults.isNotEmpty)
+                  Chip(
+                    label: Text('${_onnxResults.length} bricks'),
+                    backgroundColor: const Color(0xFF1A1A2E),
+                    labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_onnxError != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Text(_onnxError!, style: const TextStyle(color: Colors.red)),
+              ),
+            if (_onnxResults.isEmpty && _onnxError == null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'No bricks detected by ONNX model.',
+                  style: TextStyle(color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ..._onnxResults.map((brick) => Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: Color(0xFF1A1A2E), width: 4),
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    bottomLeft: Radius.circular(12),
+                  ),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _colorFromName(brick['color']),
+                            border: Border.all(color: Colors.grey.shade400, width: 1),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            brick['brick_name'] ?? brick['class'] ?? 'Unknown Brick',
+                            style: GoogleFonts.nunito(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                        ),
+                        if ((brick['count'] ?? brick['quantity']) != null)
+                          Chip(
+                            label: Text('x${brick['count'] ?? brick['quantity']}'),
+                            backgroundColor: const Color(0xFF1A1A2E).withValues(alpha: 0.1),
+                            labelStyle: const TextStyle(fontSize: 11),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Confidence: ${((brick['confidence'] ?? 0) * 100).toStringAsFixed(1)}%',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: (brick['confidence'] ?? 0).toDouble(),
+                        backgroundColor: Colors.grey[200],
+                        color: const Color(0xFF1A1A2E),
+                        minHeight: 6,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Color: ${brick['color'] ?? 'Unknown'}',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            )).toList(),
+            if (_onnxResults.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.add_circle_outline, color: Color(0xFF1A1A2E)),
+                    label: const Text(
+                      'Add ONNX Results to Inventory',
+                      style: TextStyle(color: Color(0xFF1A1A2E)),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF1A1A2E)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: _addOnnxToInventory,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _colorFromName(String? name) {
+    switch (name?.toLowerCase().trim()) {
+      case 'red':
+        return const Color(0xFFC42822);
+      case 'dark red':
+        return const Color(0xFF720E0E);
+      case 'orange':
+        return const Color(0xFFDA8541);
+      case 'yellow':
+        return const Color(0xFFF0CD61);
+      case 'lime green':
+        return const Color(0xFF00AF4D);
+      case 'green':
+        return const Color(0xFF008F41);
+      case 'dark green':
+        return const Color(0xFF00451A);
+      case 'light blue':
+        return const Color(0xFF68C3E2);
+      case 'medium blue':
+        return const Color(0xFF7396C8);
+      case 'blue':
+        return const Color(0xFF0D69AB);
+      case 'dark blue':
+        return const Color(0xFF002060);
+      case 'sand blue':
+        return const Color(0xFF5A7184);
+      case 'purple':
+        return const Color(0xFF6B327C);
+      case 'magenta':
+        return const Color(0xFFA3005B);
+      case 'white':
+        return const Color(0xFFF2F3F2);
+      case 'light gray':
+      case 'light grey':
+        return const Color(0xFFA3A2A4);
+      case 'dark gray':
+      case 'dark grey':
+        return const Color(0xFF635F61);
+      case 'black':
+        return const Color(0xFF1B2A34);
+      case 'brown':
+        return const Color(0xFF583927);
+      case 'dark tan':
+        return const Color(0xFF8F7956);
+      case 'tan':
+        return const Color(0xFFDEC69C);
+      case 'unknown':
+      default:
+        return Colors.grey.shade400;
+    }
+  }
+
 }
 
 // ---------------------------------------------------------------------------
@@ -1770,14 +2104,54 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Color _colorFromName(String name) {
-    switch (name.toLowerCase()) {
-      case 'red': return Colors.red;
-      case 'blue': return Colors.blue;
-      case 'yellow': return Colors.yellow;
-      case 'green': return Colors.green;
-      case 'black': return Colors.black;
-      case 'white': return Colors.white;
-      default: return Colors.grey;
+    switch (name.toLowerCase().trim()) {
+      case 'red':
+        return const Color(0xFFC42822);
+      case 'dark red':
+        return const Color(0xFF720E0E);
+      case 'orange':
+        return const Color(0xFFDA8541);
+      case 'yellow':
+        return const Color(0xFFF0CD61);
+      case 'lime green':
+        return const Color(0xFF00AF4D);
+      case 'green':
+        return const Color(0xFF008F41);
+      case 'dark green':
+        return const Color(0xFF00451A);
+      case 'light blue':
+        return const Color(0xFF68C3E2);
+      case 'medium blue':
+        return const Color(0xFF7396C8);
+      case 'blue':
+        return const Color(0xFF0D69AB);
+      case 'dark blue':
+        return const Color(0xFF002060);
+      case 'sand blue':
+        return const Color(0xFF5A7184);
+      case 'purple':
+        return const Color(0xFF6B327C);
+      case 'magenta':
+        return const Color(0xFFA3005B);
+      case 'white':
+        return const Color(0xFFF2F3F2);
+      case 'light gray':
+      case 'light grey':
+        return const Color(0xFFA3A2A4);
+      case 'dark gray':
+      case 'dark grey':
+        return const Color(0xFF635F61);
+      case 'black':
+        return const Color(0xFF1B2A34);
+      case 'brown':
+        return const Color(0xFF583927);
+      case 'dark tan':
+        return const Color(0xFF8F7956);
+      case 'tan':
+        return const Color(0xFFDEC69C);
+      case 'unknown':
+      default:
+        return Colors.grey.shade400;
     }
   }
 
@@ -1831,7 +2205,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   selected: _selectedColors.contains(c),
                   onSelected: (v) => setState(() => v ? _selectedColors.add(c) : _selectedColors.remove(c)),
                   selectedColor: LegoApp.legoYellow.withValues(alpha: 0.3),
-                  avatar: CircleAvatar(radius: 8, backgroundColor: _colorFromName(c)),
+                  avatar: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _colorFromName(c),
+                      border: Border.all(
+                        color: Colors.grey.shade400,
+                        width: 1.0,
+                      ),
+                    ),
+                  ),
                 ),
               )).toList(),
             ),
@@ -2721,24 +3106,54 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
   }
 
   Color _colorFromName(String? colorName) {
-    switch (colorName?.toLowerCase()) {
-      case 'red': return Colors.red;
-      case 'orange': return Colors.orange;
-      case 'yellow': return Colors.yellow;
-      case 'lime green': return Colors.lightGreen;
-      case 'green': return Colors.green;
-      case 'dark green': return Colors.green.shade800;
-      case 'blue': return Colors.blue;
-      case 'dark blue': return Colors.blue.shade900;
-      case 'light blue': return Colors.lightBlue;
-      case 'purple': return Colors.purple;
-      case 'white': return Colors.white;
-      case 'light gray': return Colors.grey.shade300;
-      case 'dark gray': return Colors.grey.shade700;
-      case 'black': return Colors.black;
-      case 'brown': return const Color(0xFF795548);
-      case 'tan': return const Color(0xFFD2B48C);
-      default: return Colors.grey;
+    switch (colorName?.toLowerCase().trim()) {
+      case 'red':
+        return const Color(0xFFC42822);
+      case 'dark red':
+        return const Color(0xFF720E0E);
+      case 'orange':
+        return const Color(0xFFDA8541);
+      case 'yellow':
+        return const Color(0xFFF0CD61);
+      case 'lime green':
+        return const Color(0xFF00AF4D);
+      case 'green':
+        return const Color(0xFF008F41);
+      case 'dark green':
+        return const Color(0xFF00451A);
+      case 'light blue':
+        return const Color(0xFF68C3E2);
+      case 'medium blue':
+        return const Color(0xFF7396C8);
+      case 'blue':
+        return const Color(0xFF0D69AB);
+      case 'dark blue':
+        return const Color(0xFF002060);
+      case 'sand blue':
+        return const Color(0xFF5A7184);
+      case 'purple':
+        return const Color(0xFF6B327C);
+      case 'magenta':
+        return const Color(0xFFA3005B);
+      case 'white':
+        return const Color(0xFFF2F3F2);
+      case 'light gray':
+      case 'light grey':
+        return const Color(0xFFA3A2A4);
+      case 'dark gray':
+      case 'dark grey':
+        return const Color(0xFF635F61);
+      case 'black':
+        return const Color(0xFF1B2A34);
+      case 'brown':
+        return const Color(0xFF583927);
+      case 'dark tan':
+        return const Color(0xFF8F7956);
+      case 'tan':
+        return const Color(0xFFDEC69C);
+      case 'unknown':
+      default:
+        return Colors.grey.shade400;
     }
   }
 
@@ -2890,7 +3305,18 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
                                     final color = brick['color'] ?? 'Unknown';
 
                                     return ListTile(
-                                      leading: CircleAvatar(radius: 8, backgroundColor: _colorFromName(color)),
+                                      leading: Container(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: _colorFromName(color),
+                                          border: Border.all(
+                                            color: Colors.grey.shade400,
+                                            width: 1.0,
+                                          ),
+                                        ),
+                                      ),
                                       title: Text(brickName, style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
                                       subtitle: Text('Confidence: ${(confidence * 100).toStringAsFixed(1)}%'),
                                       trailing: Text('x$count', style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16)),
