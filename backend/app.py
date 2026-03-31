@@ -494,7 +494,7 @@ def _detect_bricks(filepath: str) -> list:
     try:
         raw = detector.detect_bricks(filepath)
         logger.info(f"Raw detections: {len(raw)}")
- .
+ 
         for detection in raw:
             if detection.get('color'):
                 # Already set by the detector — leave it alone
