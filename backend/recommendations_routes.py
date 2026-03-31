@@ -69,6 +69,24 @@ _SET_CATALOG = { #existing sets, Add more sets here
             "3004": 15,
         },
     },
+    "12345": {
+        "name": "Test Set 1",
+        "total_pieces": 3,
+        "difficulty": "beginner",
+        "image_url": "https://images.brickset.com/sets/images/21318-1.jpg",
+        "required_bricks": {
+            "3005": 3,
+        },
+    },
+    "23456": {
+        "name": "Test Set 2",
+        "total_pieces": 10,
+        "difficulty": "beginner",
+        "image_url": "https://images.brickset.com/sets/images/21318-1.jpg",
+        "required_bricks": {
+            "3005": 10,
+        },
+    },
 }
 
 
