@@ -1,4 +1,4 @@
-# app.py - Lego Brick Counter API (v3.0 - Azure + ONNX Dual Detector)
+#app.py - Lego Brick Counter API (v3.0 - Azure + ONNX Dual Detector)
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -422,7 +422,7 @@ SET_DB = {
     },
 }
 
-# Required-brick map used for local set suggestions
+#Required-brick map used for local set suggestions
 _SET_REQUIRED = {
     "10698": {"name": "Classic Creative Brick Box", "required": ["3001", "3003", "3023", "3005"], "pieces": 790, "difficulty": "beginner"},
     "31134": {"name": "Space Rocket", "required": ["3001", "3004", "3622", "2456"], "pieces": 837, "difficulty": "intermediate"},
@@ -440,7 +440,6 @@ def _now_iso() -> str:
 def _allowed(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Keep both names for compatibility
 allowed_file = _allowed
 
 
@@ -483,38 +482,56 @@ def _aggregate(raw_detections: list) -> list:
             }
     return list(groups.values())
 
-# Alias for azure-style usage
+#Alias for azure-style usage
 aggregate_bricks = _aggregate
 
 
 def _detect_bricks(filepath: str) -> list:
     """Run detection + aggregation on a saved image file."""
     if detector is None:
+        logger.warning("No detector available")
         return []
     try:
         raw = detector.detect_bricks(filepath)
-        
-        # Add color detection to each raw detection
+        logger.info(f"Raw detections: {len(raw)}")
+ .
         for detection in raw:
+            if detection.get('color'):
+                # Already set by the detector — leave it alone
+                continue
             try:
-                # Check if detection has bounding box information
                 bbox = detection.get('bounding_box') or detection.get('bbox')
-                if bbox and isinstance(bbox, dict) and all(k in bbox for k in ['left', 'top', 'width', 'height']):
-                    # Use bounding box for color detection
-                    color = color_classifier.detect_color_from_bbox(filepath, bbox)
+                # AzureDetector returns bbox as a list [x, y, w, h]
+                if isinstance(bbox, list) and len(bbox) == 4:
+                    bbox_dict = {
+                        'left': bbox[0],
+                        'top': bbox[1],
+                        'width': bbox[2],
+                        'height': bbox[3],
+                    }
+                    detection['color'] = color_classifier.detect_color_from_bbox(
+                        filepath, bbox_dict
+                    )
+                elif isinstance(bbox, dict) and all(
+                    k in bbox for k in ['left', 'top', 'width', 'height']
+                ):
+                    detection['color'] = color_classifier.detect_color_from_bbox(
+                        filepath, bbox
+                    )
                 else:
-                    # Fallback to full image color detection
-                    color = color_classifier.detect_color_from_image(filepath)
-                detection['color'] = color
+                    detection['color'] = color_classifier.detect_color_from_image(
+                        filepath
+                    )
             except Exception as color_exc:
-                logger.warning(f"Color detection failed for brick: {color_exc}")
+                logger.warning(f"Color detection failed: {color_exc}")
                 detection['color'] = 'Unknown'
-        
+ 
         aggregated = _aggregate(raw)
         logger.info(f"Detection: {len(raw)} raw -> {len(aggregated)} aggregated")
         return aggregated
+ 
     except Exception as exc:
-        logger.error(f"Detection error: {exc}")
+        logger.error(f"Detection error: {exc}", exc_info=True)
         return []
 
 
@@ -1135,6 +1152,10 @@ def version():
         "pinecone": "connected" if pinecone_svc.enabled else "not_configured",
     })
 
+#recommendations_routes import
+from recommendations_routes import register_recommendations
+register_recommendations(app, InventoryItem, pinecone_svc, token_required, _now_iso)
+
 # Error handlers
 @app.errorhandler(413)
 def too_large(e):
@@ -1152,6 +1173,3 @@ def internal_error(e):
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
 
-#recommendations_routes import
-from recommendations_routes import register_recommendations
-register_recommendations(app, InventoryItem, pinecone_svc, token_required, _now_iso)

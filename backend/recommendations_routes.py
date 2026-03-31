@@ -85,7 +85,7 @@ def _compute_recommendations(inventory_items: list, limit: int = 10) -> list:
         missing_pieces        int   (total count of individual bricks still needed)
         image_url             str
     """
-    # Aggregate owned bricks: {brick_id: total_quantity}
+    #Aggregate owned bricks: {brick_id: total_quantity}
     owned: dict[str, int] = {}
     for item in inventory_items:
         bid = str(item.get("brick_id") or item.get("id", ""))
@@ -114,7 +114,7 @@ def _compute_recommendations(inventory_items: list, limit: int = 10) -> list:
 
         completion_pct = round(matched_types / total_types * 100)
 
-        # Only surface sets where at least 30% of brick types are already owned
+        #Only surface sets where at least 30% of brick types are already owned
         if completion_pct < 30:
             continue
 
@@ -130,7 +130,7 @@ def _compute_recommendations(inventory_items: list, limit: int = 10) -> list:
             "difficulty": info["difficulty"],
         })
 
-    # Best match first; break ties by fewest missing pieces
+    #Best match first; break ties by fewest missing pieces
     results.sort(key=lambda r: (-r["completion_percentage"], r["missing_pieces"]))
     return results[:limit]
 
@@ -142,11 +142,11 @@ def register_recommendations(app, InventoryItem, pinecone_svc, token_required, n
     def recommendations(current_user):
         limit = min(request.args.get("limit", 10, type=int), 20)
 
-        # 1. Try the user's database inventory first
+        #Try the user's database inventory first
         db_items = InventoryItem.query.filter_by(user_id=current_user.id).all()
         inventory = [{"brick_id": i.brick_id, "quantity": i.quantity} for i in db_items]
 
-        # 2. Fall back to Pinecone if the DB inventory is empty
+        #Fall back to Pinecone if the DB inventory is empty
         if not inventory and pinecone_svc.enabled:
             pinecone_inv = pinecone_svc.get_inventory(str(current_user.id))
             if pinecone_inv:
