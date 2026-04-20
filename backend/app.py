@@ -42,6 +42,17 @@ except Exception as e:
 # Load environment variables FIRST
 load_dotenv()
 
+# Try to import Gemini detector (optional)
+try:
+    from gemini_detector import GeminiDetector
+    gemini_detector = GeminiDetector()
+    logger = logging.getLogger(__name__)
+    logger.info(f"[Startup] Gemini detector: {'ready' if gemini_detector.loaded else 'not configured'}")
+except Exception as e:
+    gemini_detector = None
+    logger = logging.getLogger(__name__)
+    logger.warning(f"[Startup] Gemini detector failed to initialize: {e}")
+
 # Create Flask app
 app = Flask(__name__)
 CORS(app)
@@ -1109,6 +1120,105 @@ def detect_with_onnx(current_user):
             'success': False,
             'error': f'ONNX detection failed: {str(e)}',
             'detector_used': 'ONNX YOLOv8'
+        }), 500
+
+
+@app.route('/api/detect/gemini', methods=['POST'])
+@token_required
+def detect_with_gemini(current_user):
+    """Detect LEGO bricks using Google Gemini Flash multimodal model"""
+    try:
+        # Check detector is ready
+        if gemini_detector is None or not gemini_detector.loaded:
+            return jsonify({
+                'success': False,
+                'error': 'Gemini detector not configured. Add GEMINI_API_KEY to .env file.',
+                'detector_used': 'Gemini Flash'
+            }), 503
+
+        # Get uploaded file — same pattern as /api/upload
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+        if not _allowed(file.filename):
+            return jsonify({'success': False, 'error': 'File type not allowed'}), 400
+
+        # Save file
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        filename = f"gemini_scan_{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+        logger.info(f'[Gemini] File saved: {filepath}')
+
+        # Run Gemini detection
+        raw_results = gemini_detector.detect_bricks(filepath)
+        logger.info(f'[Gemini] Raw results: {raw_results}')
+
+        # Color detection — Gemini already returns color names
+        # but run through our classifier too for consistency
+        results = []
+        for r in raw_results:
+            gemini_color = r.get('color', 'Unknown')
+            # Use Gemini's color if it returned one, otherwise use our classifier
+            if gemini_color and gemini_color != 'Unknown':
+                color = gemini_color
+            else:
+                color = color_classifier.detect_color_from_image(filepath)
+
+            results.append({
+                'brick_name':   r.get('brick_name', 'Unknown'),
+                'color':        color,
+                'count':        int(r.get('count', 1)),
+                'confidence':   float(r.get('confidence', 0.90)),
+                'bounding_box': {}
+            })
+
+        total_bricks = sum(r['count'] for r in results)
+        unique_types = len(set(r['brick_name'] for r in results))
+
+        # Save to scan history
+        try:
+            import json
+            new_scan = ScanHistory(
+                user_id=current_user.id,
+                image_path=filename,
+                total_bricks=total_bricks,
+                unique_types=unique_types,
+                scan_results=json.dumps(results)
+            )
+            db.session.add(new_scan)
+            db.session.commit()
+            logger.info(f'[Gemini] Scan saved to history id={new_scan.id}')
+        except Exception as db_err:
+            logger.warning(f'[Gemini] Could not save scan history: {db_err}')
+            db.session.rollback()
+
+        return jsonify({
+            'success':       True,
+            'total_bricks':  total_bricks,
+            'unique_types':  unique_types,
+            'detector_used': 'Gemini Flash',
+            'results':       results
+        })
+
+    except Exception as e:
+        logger.error(f'[Gemini] Detection error: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        
+        error_msg = str(e)
+        # Give user-friendly message for quota errors
+        if '429' in error_msg or 'quota' in error_msg.lower() or 'RESOURCE_EXHAUSTED' in error_msg:
+            friendly = 'Gemini free tier quota exceeded for all available models. Try again in a few minutes or create a new Google Cloud project at console.cloud.google.com/projectcreate and generate a fresh API key.'
+        else:
+            friendly = f'Gemini detection failed: {error_msg}'
+        
+        return jsonify({
+            'success': False,
+            'error': friendly,
+            'detector_used': 'Gemini Flash'
         }), 500
 
 # ---------------------------------------------------------------------------
