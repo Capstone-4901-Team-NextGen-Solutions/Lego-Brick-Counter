@@ -19,16 +19,39 @@ class GeminiDetector:
         self.api_key = os.getenv('GEMINI_API_KEY')
         self.api_base = 'https://generativelanguage.googleapis.com/v1beta/models'
         self.models_to_try = [
-            'gemini-2.5-flash-preview-04-17',  # Latest stable, best for vision
-            'gemini-2.5-flash',                 # Stable alias
-            'gemini-2.5-flash-lite-preview',    # Lighter version, cheaper
-            'gemini-3-flash',                   # Newest release April 2026
+            'gemini-2.5-flash',
+            'gemini-2.5-pro',
         ]
         self.loaded = self.api_key is not None
         if not self.loaded:
             logger.warning('[Gemini] GEMINI_API_KEY not set in .env')
         else:
             logger.info(f'[Gemini] Detector ready with {len(self.models_to_try)} fallback models')
+            self.working_model = self._find_working_model()
+            if self.working_model:
+                logger.info(f'[Gemini] Ready with model: {self.working_model}')
+            else:
+                logger.warning('[Gemini] No working model found — check API key and billing')
+                self.loaded = False
+
+    def _find_working_model(self):
+        """Test each model and return the first one that responds."""
+        test_payload = {
+            'contents': [{'parts': [{'text': 'Say OK'}]}],
+            'generationConfig': {'maxOutputTokens': 5}
+        }
+        for model in self.models_to_try:
+            try:
+                url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}'
+                r = requests.post(url, json=test_payload, timeout=10)
+                if r.status_code == 200:
+                    logger.info(f'[Gemini] Working model found: {model}')
+                    return model
+                else:
+                    logger.warning(f'[Gemini] Model {model} returned {r.status_code}')
+            except Exception as e:
+                logger.warning(f'[Gemini] Model {model} error: {e}')
+        return None
 
     def detect_bricks(self, image_path: str) -> list:
         """
@@ -98,10 +121,15 @@ class GeminiDetector:
         # Make API call with model fallback
         headers = {'Content-Type': 'application/json'}
         last_error = None
-        
-        for model in self.models_to_try:
+
+        models_to_attempt = []
+        if self.working_model:
+            models_to_attempt.append(self.working_model)
+        models_to_attempt += [m for m in self.models_to_try if m != self.working_model]
+
+        for model in models_to_attempt:
             try:
-                url = f'{self.api_base}/{model}:generateContent?key={self.api_key}'
+                url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}'
                 logger.info(f'[Gemini] Trying model: {model}')
                 logger.info(f'[Gemini] Sending image to Gemini: {image_path.name}')
                 response = requests.post(url, json=payload, headers=headers, timeout=30)

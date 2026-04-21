@@ -1993,22 +1993,22 @@ class _ScanScreenState extends State<ScanScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.memory, color: Color(0xFF1A1A2E), size: 20),
+                const Icon(Icons.memory, color: Color(0xFFFFD700), size: 20),
                 const SizedBox(width: 8),
                 Text(
                   'ONNX YOLOv8 Results',
                   style: GoogleFonts.nunito(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF1A1A2E),
+                    color: LegoApp.legoDark,
                   ),
                 ),
                 const Spacer(),
                 if (_onnxResults.isNotEmpty)
                   Chip(
                     label: Text('${_onnxResults.length} bricks'),
-                    backgroundColor: const Color(0xFF1A1A2E),
-                    labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                    backgroundColor: const Color(0xFFFFD700),
+                    labelStyle: const TextStyle(color: Colors.black, fontSize: 12),
                   ),
               ],
             ),
@@ -2042,7 +2042,7 @@ class _ScanScreenState extends State<ScanScreen> {
               child: Container(
                 decoration: const BoxDecoration(
                   border: Border(
-                    left: BorderSide(color: Color(0xFF1A1A2E), width: 4),
+                    left: BorderSide(color: Color(0xFFFFD700), width: 4),
                   ),
                   borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(12),
@@ -2074,7 +2074,7 @@ class _ScanScreenState extends State<ScanScreen> {
                         if ((brick['count'] ?? brick['quantity']) != null)
                           Chip(
                             label: Text('x${brick['count'] ?? brick['quantity']}'),
-                            backgroundColor: const Color(0xFF1A1A2E).withValues(alpha: 0.1),
+                            backgroundColor: const Color(0xFFFFD700).withValues(alpha: 0.2),
                             labelStyle: const TextStyle(fontSize: 11),
                           ),
                       ],
@@ -2090,7 +2090,7 @@ class _ScanScreenState extends State<ScanScreen> {
                       child: LinearProgressIndicator(
                         value: (brick['confidence'] ?? 0).toDouble(),
                         backgroundColor: Colors.grey[200],
-                        color: const Color(0xFF1A1A2E),
+                        color: const Color(0xFFFFD700),
                         minHeight: 6,
                       ),
                     ),
@@ -2109,13 +2109,13 @@ class _ScanScreenState extends State<ScanScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.add_circle_outline, color: Color(0xFF1A1A2E)),
+                    icon: const Icon(Icons.add_circle_outline, color: Color(0xFFFFD700)),
                     label: const Text(
                       'Add ONNX Results to Inventory',
-                      style: TextStyle(color: Color(0xFF1A1A2E)),
+                      style: TextStyle(color: Colors.black),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF1A1A2E)),
+                      side: const BorderSide(color: Color(0xFFFFD700)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -2140,22 +2140,22 @@ class _ScanScreenState extends State<ScanScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.auto_awesome, color: Color(0xFF1565C0), size: 20),
+                const Icon(Icons.auto_awesome, color: Color(0xFFFFD700), size: 20),
                 const SizedBox(width: 8),
                 Text(
                   'Gemini Flash Results',
                   style: GoogleFonts.nunito(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF1565C0),
+                    color: LegoApp.legoDark,
                   ),
                 ),
                 const Spacer(),
                 if (_geminiResults.isNotEmpty)
                   Chip(
                     label: Text('${_geminiResults.length} types'),
-                    backgroundColor: const Color(0xFF1565C0),
-                    labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                    backgroundColor: const Color(0xFFFFD700),
+                    labelStyle: const TextStyle(color: Colors.black, fontSize: 12),
                   ),
               ],
             ),
@@ -2189,7 +2189,7 @@ class _ScanScreenState extends State<ScanScreen> {
               child: Container(
                 decoration: const BoxDecoration(
                   border: Border(
-                    left: BorderSide(color: Color(0xFF1565C0), width: 4),
+                    left: BorderSide(color: Color(0xFFFFD700), width: 4),
                   ),
                   borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(12),
@@ -2221,7 +2221,7 @@ class _ScanScreenState extends State<ScanScreen> {
                         if ((brick['count'] ?? brick['quantity']) != null)
                           Chip(
                             label: Text('x${brick['count'] ?? brick['quantity']}'),
-                            backgroundColor: const Color(0xFF1565C0).withValues(alpha: 0.1),
+                            backgroundColor: const Color(0xFFFFD700).withValues(alpha: 0.2),
                             labelStyle: const TextStyle(fontSize: 11),
                           ),
                       ],
@@ -2237,7 +2237,7 @@ class _ScanScreenState extends State<ScanScreen> {
                       child: LinearProgressIndicator(
                         value: (brick['confidence'] ?? 0).toDouble(),
                         backgroundColor: Colors.grey[200],
-                        color: const Color(0xFF1565C0),
+                        color: const Color(0xFFFFD700),
                         minHeight: 6,
                       ),
                     ),
@@ -2256,13 +2256,13 @@ class _ScanScreenState extends State<ScanScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.add_circle_outline, color: Color(0xFF1565C0)),
+                    icon: const Icon(Icons.add_circle_outline, color: Color(0xFFFFD700)),
                     label: const Text(
                       'Add Gemini Results to Inventory',
-                      style: TextStyle(color: Color(0xFF1565C0)),
+                      style: TextStyle(color: Colors.black),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF1565C0)),
+                      side: const BorderSide(color: Color(0xFFFFD700)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
