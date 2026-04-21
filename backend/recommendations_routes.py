@@ -80,11 +80,11 @@ _SET_CATALOG = { #existing sets, Add more sets here
     },
     "23456": {
         "name": "Test Set 2",
-        "total_pieces": 10,
+        "total_pieces": 5,
         "difficulty": "beginner",
         "image_url": "https://images.brickset.com/sets/images/21318-1.jpg",
         "required_bricks": {
-            "3005": 10,
+            "3005": 5,
         },
     },
 }
