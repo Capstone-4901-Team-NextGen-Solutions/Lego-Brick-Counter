@@ -5,6 +5,7 @@ import 'services/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'dart:convert';
+import 'camera_screen.dart';
 
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -557,14 +558,39 @@ class _ScanScreenState extends State<ScanScreen> {
   });
 
   Future<void> _pickImage(ImageSource source) async {
-    setState(() { _errorMessage = null; _detectionResults = []; _isDetecting = false; });
-    try {
-      final img = await ImagePicker().pickImage(source: source, maxWidth: 1200, maxHeight: 1200, imageQuality: 80);
-      if (img != null) setState(() { _selectedImage = img; _scannedBricks = []; });
-    } catch (e) {
-      setState(() => _errorMessage = '${source == ImageSource.camera ? "Camera" : "Gallery"} error: $e');
+  setState(() {
+    _errorMessage = null;
+    _detectionResults = [];
+    _isDetecting = false;
+  });
+ 
+  try {
+    XFile? img;
+ 
+    if (source == ImageSource.camera) {
+      //Uses the real camera screen instead of ImagePicker.camera,
+      //which doesn't work on desktop and silently falls back to file picker.
+      img = await CameraCapture.capture(context);
+    } else {
+      img = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 80,
+      );
     }
+ 
+    if (img != null) {
+      setState(() {
+        _selectedImage = img;
+        _scannedBricks = [];
+      });
+    }
+  } catch (e) {
+    setState(() => _errorMessage =
+        '${source == ImageSource.camera ? "Camera" : "Gallery"} error: $e');
   }
+}
 
   Future<void> _detectBricks() async {
     if (_selectedImage == null) return;
@@ -729,14 +755,30 @@ class _ScanScreenState extends State<ScanScreen> {
     ));
   }
 
-  Widget _actionButtons() => Row(
+  Widget _actionButtons() {
+  return Row(
     key: const ValueKey('action_btns'),
     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
     children: [
-      _actionBtn(Icons.camera_alt, 'Take Photo', () { HapticFeedback.lightImpact(); _pickImage(ImageSource.camera); }),
-      _actionBtn(Icons.photo_library, 'Upload Image', () { HapticFeedback.lightImpact(); _pickImage(ImageSource.gallery); }),
+      _actionBtn(
+        Icons.camera_alt,
+        'Take Photo',
+        () {
+          HapticFeedback.lightImpact();
+          _pickImage(ImageSource.camera);
+        },
+      ),
+      _actionBtn(
+        Icons.photo_library,
+        'Upload Image',
+        () {
+          HapticFeedback.lightImpact();
+          _pickImage(ImageSource.gallery);
+        },
+      ),
     ],
   );
+}
 
   Widget _actionBtn(IconData icon, String label, VoidCallback onTap) => Expanded(
     child: Padding(
