@@ -11,14 +11,8 @@ import 'auth_service.dart';
 class ApiService {
   // Platform-specific base URL
   static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:5000/api';
-    }
-    // Android emulator uses 10.0.2.2 to reach host machine's localhost
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5000/api';
-    }
-    // Windows, macOS, Linux, iOS simulator all use localhost
+    if (kIsWeb) return 'https://lego-brick-counter-backend.onrender.com/api';
+    if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
     return 'http://localhost:5000/api';
   }
 
