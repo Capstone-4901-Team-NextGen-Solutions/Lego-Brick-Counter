@@ -17,6 +17,10 @@ import base64
 import io
 import numpy as np
 
+#email verification imports
+import secrets
+from email_service import email_service
+
 from brick_detector import BrickDetector
 from pinecone_service import PineconeService
 from color_detector import HSVColorClassifier
@@ -90,6 +94,12 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
+
+    #Email verification variables
+    email_verified      = db.Column(db.Boolean, default=False)
+    verification_token  = db.Column(db.String(100), unique=True, nullable=True)
+    reset_token         = db.Column(db.String(100), unique=True, nullable=True)
+    reset_token_expires = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     scan_history = db.relationship('ScanHistory', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -108,6 +118,17 @@ class User(UserMixin, db.Model):
             app.config['JWT_SECRET_KEY'],
             algorithm='HS256'
         )
+
+    def generate_verification_token(self):
+        """Generate a unique email verification token and save it to the DB."""
+        self.verification_token = secrets.token_urlsafe(32)
+        return self.verification_token
+        
+    def generate_reset_token(self):
+        """Generate a password reset token valid for 1 hour."""
+        self.reset_token = secrets.token_urlsafe(32)
+        self.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+        return self.reset_token
     
     @staticmethod
     def verify_auth_token(token):
