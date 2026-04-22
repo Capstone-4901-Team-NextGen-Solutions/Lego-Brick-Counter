@@ -1,15 +1,61 @@
-//camera_screen.dart
-//Requires: camera: ^0.11.0  in pubspec.yaml
+// camera_screen.dart
+// Platform-aware camera capture:
+//   - Web: uses ImagePicker with ImageSource.camera (browser native)
+//   - Desktop/Mobile native: uses camera package with live preview
+//
+// Place in lib/ alongside main.dart.
+// Requires in pubspec.yaml:
+//   camera: ^0.11.0
+//   image_picker: ^1.0.0  (already present)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:camera/camera.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Public entry point
+//
+// Usage in _ScanScreenState — replace _pickImage(ImageSource.camera) with:
+//   final XFile? img = await CameraCapture.capture(context);
+//   if (img != null) setState(() { _selectedImage = img; _scannedBricks = []; });
+// ─────────────────────────────────────────────────────────────────────────────
 
 class CameraCapture {
+  /// Opens the best available camera UI for the current platform.
+  ///
+  /// - Web: delegates to ImagePicker which triggers the browser's
+  ///   native camera/file chooser (no live preview possible in browser).
+  /// - Native desktop/mobile: opens a full-screen live camera preview
+  ///   using the `camera` package.
   static Future<XFile?> capture(BuildContext context) async {
+    // ── Web: browser handles camera natively via ImagePicker ──────────────
+    if (kIsWeb) {
+      try {
+        final img = await ImagePicker().pickImage(
+          source: ImageSource.camera,
+          maxWidth: 1200,
+          maxHeight: 1200,
+          imageQuality: 85,
+        );
+        return img;
+      } catch (e) {
+        // Browser may not support camera source — fall back to gallery picker
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text(
+                'Camera not available in browser — please upload an image instead.'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+        return null;
+      }
+    }
+
+    // ── Native: use camera package with live preview ───────────────────────
     List<CameraDescription> cameras;
     try {
       cameras = await availableCameras();
@@ -45,7 +91,10 @@ class CameraCapture {
   }
 }
 
-//Camera screen — desktop-safe layout 
+// ─────────────────────────────────────────────────────────────────────────────
+// Native camera screen 
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _CameraScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
   const _CameraScreen({required this.cameras});
@@ -93,13 +142,11 @@ class _CameraScreenState extends State<_CameraScreen>
   }
 
   Future<void> _init(CameraDescription cam) async {
-    //Dispose previous controller cleanly
     final old = _controller;
     if (old != null) {
       await old.dispose();
       _controller = null;
     }
-
     if (!mounted) return;
     setState(() { _initialized = false; _error = null; });
 
@@ -109,11 +156,9 @@ class _CameraScreenState extends State<_CameraScreen>
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
-
     try {
       await ctrl.initialize();
       if (!mounted) { ctrl.dispose(); return; }
-      //Flash not supported on all desktop cameras — ignores errors
       try { await ctrl.setFlashMode(_flash); } catch (_) {}
       setState(() { _controller = ctrl; _initialized = true; });
     } on CameraException catch (e) {
@@ -163,21 +208,16 @@ class _CameraScreenState extends State<_CameraScreen>
       : _flash == FlashMode.auto ? Icons.flash_auto
       : Icons.flash_off;
 
-  // ── Build ─────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
-          children: [
-            _topBar(),
-            // ── Preview area fills all remaining space ──────────────────
-            Expanded(child: _previewArea()),
-            _bottomBar(),
-          ],
-        ),
+        child: Column(children: [
+          _topBar(),
+          Expanded(child: _previewArea()),
+          _bottomBar(),
+        ]),
       ),
     );
   }
@@ -185,63 +225,41 @@ class _CameraScreenState extends State<_CameraScreen>
   Widget _previewArea() {
     if (_error != null) return _errorView();
     if (!_initialized || _controller == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: _yellow),
-      );
+      return const Center(child: CircularProgressIndicator(color: _yellow));
     }
-
-    // SizedBox.expand + FittedBox gives a desktop-safe fullscreen preview
-    // without needing AspectRatio (which requires bounded constraints).
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Camera preview fills the box, letterboxed if needed
-        SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.contain,
-            child: SizedBox(
-              width:  _controller!.value.previewSize?.height ?? 640,
-              height: _controller!.value.previewSize?.width  ?? 480,
-              child: CameraPreview(_controller!),
-            ),
+    return Stack(fit: StackFit.expand, children: [
+      SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: SizedBox(
+            width:  _controller!.value.previewSize?.height ?? 640,
+            height: _controller!.value.previewSize?.width  ?? 480,
+            child: CameraPreview(_controller!),
           ),
         ),
-        // Capture flash overlay
-        if (_capturing)
-          Container(color: Colors.white38),
-      ],
-    );
+      ),
+      if (_capturing) Container(color: Colors.white38),
+    ]);
   }
 
   Widget _topBar() {
     return Container(
       color: Colors.black87,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: () => Navigator.of(context).pop(null),
-            tooltip: 'Cancel',
-          ),
-          Expanded(
-            child: Text(
-              'Take Photo',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.nunito(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: Icon(_flashIcon, color: Colors.white),
-            onPressed: _initialized ? _toggleFlash : null,
-            tooltip: 'Flash',
-          ),
-        ],
-      ),
+      child: Row(children: [
+        IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(null),
+          tooltip: 'Cancel',
+        ),
+        Expanded(child: Text('Take Photo', textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700))),
+        IconButton(
+          icon: Icon(_flashIcon, color: Colors.white),
+          onPressed: _initialized ? _toggleFlash : null,
+          tooltip: 'Flash',
+        ),
+      ]),
     );
   }
 
@@ -249,59 +267,40 @@ class _CameraScreenState extends State<_CameraScreen>
     return Container(
       color: Colors.black87,
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          // Gallery shortcut
-          _iconBtn(
-            icon: Icons.photo_library_outlined,
-            onTap: () async {
-              final img = await ImagePicker().pickImage(
-                source: ImageSource.gallery,
-                imageQuality: 85,
-              );
-              if (img != null && mounted) Navigator.of(context).pop(img);
-            },
-            tooltip: 'Pick from gallery',
-          ),
-
-          // Shutter
-          GestureDetector(
-            onTap: _capturing ? null : _capture,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 100),
-              width: 72, height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _capturing ? Colors.grey : _yellow,
-                border: Border.all(color: Colors.white, width: 4),
-              ),
-              child: _capturing
-                  ? const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.camera_alt, color: _dark, size: 32),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+        _iconBtn(
+          icon: Icons.photo_library_outlined,
+          onTap: () async {
+            final img = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+            if (img != null && mounted) Navigator.of(context).pop(img);
+          },
+          tooltip: 'Pick from gallery',
+        ),
+        GestureDetector(
+          onTap: _capturing ? null : _capture,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 72, height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _capturing ? Colors.grey : _yellow,
+              border: Border.all(color: Colors.white, width: 4),
             ),
+            child: _capturing
+                ? const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.camera_alt, color: _dark, size: 32),
           ),
-
-          // Switch camera
-          _iconBtn(
-            icon: Icons.flip_camera_android,
-            onTap: widget.cameras.length > 1 ? _switchCamera : null,
-            tooltip: 'Switch camera',
-          ),
-        ],
-      ),
+        ),
+        _iconBtn(
+          icon: Icons.flip_camera_android,
+          onTap: widget.cameras.length > 1 ? _switchCamera : null,
+          tooltip: 'Switch camera',
+        ),
+      ]),
     );
   }
 
-  Widget _iconBtn({
-    required IconData icon,
-    VoidCallback? onTap,
-    String? tooltip,
-  }) {
+  Widget _iconBtn({required IconData icon, VoidCallback? onTap, String? tooltip}) {
     final enabled = onTap != null;
     return Tooltip(
       message: tooltip ?? '',
@@ -312,39 +311,29 @@ class _CameraScreenState extends State<_CameraScreen>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.white.withOpacity(enabled ? 0.15 : 0.05),
-            border: Border.all(
-              color: Colors.white.withOpacity(enabled ? 0.3 : 0.08),
-            ),
+            border: Border.all(color: Colors.white.withOpacity(enabled ? 0.3 : 0.08)),
           ),
-          child: Icon(icon,
-            color: Colors.white.withOpacity(enabled ? 1.0 : 0.25),
-            size: 26,
-          ),
+          child: Icon(icon, color: Colors.white.withOpacity(enabled ? 1.0 : 0.25), size: 26),
         ),
       ),
     );
   }
 
   Widget _errorView() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.videocam_off, color: Colors.white54, size: 56),
-          const SizedBox(height: 16),
-          Text(
-            _error ?? 'Camera unavailable',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => _init(widget.cameras[_cameraIndex]),
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-          ),
-        ]),
-      ),
-    );
+    return Center(child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.videocam_off, color: Colors.white54, size: 56),
+        const SizedBox(height: 16),
+        Text(_error ?? 'Camera unavailable', textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70, fontSize: 14)),
+        const SizedBox(height: 24),
+        ElevatedButton.icon(
+          onPressed: () => _init(widget.cameras[_cameraIndex]),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Retry'),
+        ),
+      ]),
+    ));
   }
 }

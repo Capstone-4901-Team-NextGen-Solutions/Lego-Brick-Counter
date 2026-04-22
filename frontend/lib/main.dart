@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:camera/camera.dart';
+import 'camera_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1270,19 +1271,25 @@ class _ScanScreenState extends State<ScanScreen> {
         _isDetectingOnnx = false;
       });
 
-  Future<void> _pickImage(ImageSource source) async {
+    Future<void> _pickImage(ImageSource source) async {
     setState(() {
       _errorMessage = null;
       _detectionResults = [];
       _isDetecting = false;
     });
     try {
-      final img = await ImagePicker().pickImage(
-        source: source,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 80,
-      );
+      XFile? img;
+      if (source == ImageSource.camera) {
+        // Uses CameraCapture which handles web vs native automatically
+        img = await CameraCapture.capture(context);
+      } else {
+        img = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1200,
+          maxHeight: 1200,
+          imageQuality: 80,
+        );
+      }
       if (img != null) {
         setState(() {
           _selectedImage = img;
@@ -1290,7 +1297,8 @@ class _ScanScreenState extends State<ScanScreen> {
         });
       }
     } catch (e) {
-      setState(() => _errorMessage = '${source == ImageSource.camera ? "Camera" : "Gallery"} error: $e');
+      setState(() => _errorMessage =
+          '${source == ImageSource.camera ? "Camera" : "Gallery"} error: $e');
     }
   }
 
@@ -1772,18 +1780,32 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
+   
   Widget _actionButtons() {
     return Row(
       key: const ValueKey('action_btns'),
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _actionBtn(Icons.camera_alt, 'Take Photo',
-            () { HapticFeedback.lightImpact(); _pickImage(ImageSource.camera); }),
-        _actionBtn(Icons.photo_library, 'Upload Image',
-            () { HapticFeedback.lightImpact(); _pickImage(ImageSource.gallery); }),
+        _actionBtn(
+          Icons.camera_alt,
+          'Take Photo',
+          () {
+            HapticFeedback.lightImpact();
+            _pickImage(ImageSource.camera);
+          },
+        ),
+        _actionBtn(
+          Icons.photo_library,
+          'Upload Image',
+          () {
+            HapticFeedback.lightImpact();
+            _pickImage(ImageSource.gallery);
+          },
+        ),
       ],
     );
   }
+
 
   Widget _actionBtn(IconData icon, String label, VoidCallback onTap) {
     return Expanded(
