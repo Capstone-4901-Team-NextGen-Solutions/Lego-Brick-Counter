@@ -10,10 +10,10 @@ import 'auth_service.dart';
 class ApiService {
   // ── Base URL ────────────────────────────────────────────────────
   static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:5000/api';
-    if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
-    return 'http://localhost:5000/api';
-  }
+  if (kIsWeb) return 'https://lego-brick-counter-backend.onrender.com/api';
+  if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
+  return 'http://localhost:5000/api';
+}
 
   static const Duration timeout = Duration(seconds: 30);
 
