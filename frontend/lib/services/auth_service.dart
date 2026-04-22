@@ -27,12 +27,12 @@ class AuthService extends ChangeNotifier {
 
   // ── Base URL (mirrors ApiService) ─────────────────────────────────
   static String get _baseUrl {
-    if (kIsWeb) return 'http://localhost:5000/api';
-    try {
-      if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
-    } catch (_) {}
-    return 'http://localhost:5000/api';
-  }
+  if (kIsWeb) return 'https://lego-brick-counter-backend.onrender.com/api';
+  try {
+    if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
+  } catch (_) {}
+  return 'http://localhost:5000/api';
+}
 
   // ── Init — call once in main() ────────────────────────────────────
   Future<void> init() async {

@@ -17,6 +17,10 @@ import base64
 import io
 import numpy as np
 
+#email verification imports
+import secrets
+from email_service import email_service
+
 from brick_detector import BrickDetector
 from pinecone_service import PineconeService
 from color_detector import LegoColorClassifier
@@ -43,6 +47,7 @@ except Exception as e:
 # Load environment variables FIRST
 load_dotenv()
 
+
 # Create Flask app
 app = Flask(__name__)
 CORS(app)
@@ -67,6 +72,13 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin
 import jwt
+
+# Fix Render's postgres:// prefix — SQLAlchemy requires postgresql://
+_database_url = os.getenv('DATABASE_URL', 'sqlite:///lego_app.db')
+if _database_url.startswith('postgres://'):
+    _database_url = _database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = _database_url 
+
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
@@ -101,6 +113,12 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
+
+    #Email verification variables
+    email_verified      = db.Column(db.Boolean, default=False)
+    verification_token  = db.Column(db.String(100), unique=True, nullable=True)
+    reset_token         = db.Column(db.String(100), unique=True, nullable=True)
+    reset_token_expires = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     scan_history = db.relationship('ScanHistory', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -119,6 +137,17 @@ class User(UserMixin, db.Model):
             app.config['JWT_SECRET_KEY'],
             algorithm='HS256'
         )
+
+    def generate_verification_token(self):
+        """Generate a unique email verification token and save it to the DB."""
+        self.verification_token = secrets.token_urlsafe(32)
+        return self.verification_token
+        
+    def generate_reset_token(self):
+        """Generate a password reset token valid for 1 hour."""
+        self.reset_token = secrets.token_urlsafe(32)
+        self.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+        return self.reset_token
     
     @staticmethod
     def verify_auth_token(token):
@@ -601,24 +630,24 @@ def handle_errors(f):
     return wrapper
 
 
-def _save_upload(file=None, base64_data=None) -> str:
-    """Save an uploaded file or base64 payload; returns the filepath."""
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    if file is not None:
-        fname = f"lego_scan_{ts}_{secure_filename(file.filename)}"
-        fpath = os.path.join(UPLOAD_FOLDER, fname)
-        file.save(fpath)
-        return fpath
+import cloudinary
+import cloudinary.uploader
 
-    # base64
-    if "," in base64_data:
-        base64_data = base64_data.split(",", 1)[1]
-    img_bytes = base64.b64decode(base64_data)
-    img = Image.open(io.BytesIO(img_bytes))
-    fname = f"lego_scan_{ts}.jpg"
-    fpath = os.path.join(UPLOAD_FOLDER, fname)
-    img.save(fpath, "JPEG")
-    return fpath
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+)
+
+def _save_upload(file=None, base64_data=None) -> str:
+    """Upload image to Cloudinary and return the public URL."""
+    if file is not None:
+        result = cloudinary.uploader.upload(file)
+    else:
+        if ',' in base64_data:
+            base64_data = base64_data.split(',', 1)[1]
+        result = cloudinary.uploader.upload(f"data:image/jpeg;base64,{base64_data}")
+    return result['secure_url']
 
 # ---------------------------------------------------------------------------
 # AUTHENTICATION ENDPOINTS
