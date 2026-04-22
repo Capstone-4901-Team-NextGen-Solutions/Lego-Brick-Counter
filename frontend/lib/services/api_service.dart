@@ -11,14 +11,8 @@ import 'auth_service.dart';
 class ApiService {
   // Platform-specific base URL
   static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:5000/api';
-    }
-    // Android emulator uses 10.0.2.2 to reach host machine's localhost
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5000/api';
-    }
-    // Windows, macOS, Linux, iOS simulator all use localhost
+    if (kIsWeb) return 'https://lego-brick-counter-backend.onrender.com/api';
+    if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
     return 'http://localhost:5000/api';
   }
 
@@ -587,96 +581,6 @@ class ApiService {
     final auth = AuthService();
     var request =
         http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/onnx'));
-    
-    // Add auth headers
-    request.headers.addAll(auth.authHeaders);
-    
-    final bytes = await imageFile.readAsBytes();
-    request.files.add(http.MultipartFile.fromBytes(
-      'file',
-      bytes,
-      filename: imageFile.name,
-    ));
-
-    var streamed = await request.send().timeout(timeout);
-    final body = await streamed.stream.bytesToString();
-
-    if (streamed.statusCode == 200) {
-      return json.decode(body);
-    }
-    if (streamed.statusCode == 401) {
-      await auth.logout();
-      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
-    }
-    if (streamed.statusCode == 503) {
-      return json.decode(body);
-    }
-    return {
-      'success': false,
-      'error': 'Server error (${streamed.statusCode}): $body'
-    };
-  }
-
-  /// Detect bricks using Google Gemini Flash model
-  static Future<Map<String, dynamic>> detectWithGemini(dynamic imageFile) async {
-    try {
-      if (kIsWeb) {
-        return await _detectWithGeminiWeb(imageFile);
-      } else {
-        return await _detectWithGeminiNative(imageFile);
-      }
-    } on TimeoutException {
-      return {
-        'success': false,
-        'error': 'Request timed out. Please try again.'
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'error': 'Failed to detect with Gemini: ${e.toString()}'
-      };
-    }
-  }
-
-  static Future<Map<String, dynamic>> _detectWithGeminiWeb(XFile imageFile) async {
-    final auth = AuthService();
-    var request =
-        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/gemini'));
-    
-    // Add auth headers
-    request.headers.addAll(auth.authHeaders);
-    
-    final bytes = await imageFile.readAsBytes();
-    request.files.add(http.MultipartFile.fromBytes(
-      'file',
-      bytes,
-      filename: imageFile.name,
-    ));
-
-    var streamed = await request.send().timeout(timeout);
-    final body = await streamed.stream.bytesToString();
-
-    if (streamed.statusCode == 200) {
-      return json.decode(body);
-    }
-    if (streamed.statusCode == 401) {
-      await auth.logout();
-      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
-    }
-    if (streamed.statusCode == 503) {
-      return json.decode(body);
-    }
-    return {
-      'success': false,
-      'error': 'Server error (${streamed.statusCode}): $body'
-    };
-  }
-
-  static Future<Map<String, dynamic>> _detectWithGeminiNative(
-      XFile imageFile) async {
-    final auth = AuthService();
-    var request =
-        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/gemini'));
     
     // Add auth headers
     request.headers.addAll(auth.authHeaders);

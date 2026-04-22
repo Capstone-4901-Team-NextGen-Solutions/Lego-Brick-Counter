@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -27,12 +28,12 @@ class AuthService extends ChangeNotifier {
 
   // ── Base URL (mirrors ApiService) ─────────────────────────────────
   static String get _baseUrl {
-    if (kIsWeb) return 'http://localhost:5000/api';
-    try {
-      if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
-    } catch (_) {}
-    return 'http://localhost:5000/api';
-  }
+  if (kIsWeb) return 'https://lego-brick-counter-backend.onrender.com/api';
+  try {
+    if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
+  } catch (_) {}
+  return 'http://localhost:5000/api';
+}
 
   // ── Init — call once in main() ────────────────────────────────────
   Future<void> init() async {
@@ -71,7 +72,7 @@ class AuthService extends ChangeNotifier {
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'email': email, 'password': password}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 60));
 
       final result = json.decode(response.body) as Map<String, dynamic>;
 
@@ -80,6 +81,8 @@ class AuthService extends ChangeNotifier {
       }
 
       return result;
+    } on TimeoutException {
+      return {'success': false, 'error': 'Server is waking up — please try again in a few seconds.'};
     } catch (e) {
       return {'success': false, 'error': 'Login failed: $e'};
     }
@@ -98,7 +101,7 @@ class AuthService extends ChangeNotifier {
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'email': email, 'password': password, 'username': username}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 60));
 
       final result = json.decode(response.body) as Map<String, dynamic>;
 
@@ -107,6 +110,8 @@ class AuthService extends ChangeNotifier {
       }
 
       return result;
+    } on TimeoutException {
+      return {'success': false, 'error': 'Server is waking up — please try again in a few seconds.'};
     } catch (e) {
       return {'success': false, 'error': 'Registration failed: $e'};
     }
