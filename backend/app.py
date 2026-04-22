@@ -612,24 +612,65 @@ def handle_errors(f):
     return wrapper
 
 
+import cloudinary
+import cloudinary.uploader
+ 
+# Only configure Cloudinary if all three credentials are present and non-placeholder
+_cloudinary_enabled = all([
+    os.getenv('CLOUDINARY_CLOUD_NAME'),
+    os.getenv('CLOUDINARY_API_KEY'),
+    os.getenv('CLOUDINARY_API_SECRET'),
+    os.getenv('CLOUDINARY_CLOUD_NAME') not in ('your_cloud_name', ''),
+    os.getenv('CLOUDINARY_API_KEY') not in ('your_api_key', ''),
+    os.getenv('CLOUDINARY_API_SECRET') not in ('your_api_secret', ''),
+])
+ 
+if _cloudinary_enabled:
+    cloudinary.config(
+        cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.getenv('CLOUDINARY_API_KEY'),
+        api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+    )
+    logger.info("Cloudinary configured — uploads will be stored in the cloud")
+else:
+    logger.info("Cloudinary not configured — uploads will be saved locally to uploads/")
+ 
+ 
 def _save_upload(file=None, base64_data=None) -> str:
-    """Save an uploaded file or base64 payload; returns the filepath."""
+    """
+    Save an uploaded image and return a path/URL that can be passed to
+    the detector.
+ 
+    Strategy:
+      1. If Cloudinary credentials are configured, upload to Cloudinary and
+         return the secure URL. The detector will download it for analysis.
+      2. Otherwise, save to the local uploads/ folder and return the filepath.
+         This is the default for local development.
+    """
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    if file is not None:
-        fname = f"lego_scan_{ts}_{secure_filename(file.filename)}"
-        fpath = os.path.join(UPLOAD_FOLDER, fname)
-        file.save(fpath)
-        return fpath
-
-    # base64
-    if "," in base64_data:
-        base64_data = base64_data.split(",", 1)[1]
-    img_bytes = base64.b64decode(base64_data)
-    img = Image.open(io.BytesIO(img_bytes))
-    fname = f"lego_scan_{ts}.jpg"
-    fpath = os.path.join(UPLOAD_FOLDER, fname)
-    img.save(fpath, "JPEG")
-    return fpath
+ 
+    if _cloudinary_enabled:
+        # ── Cloudinary path ───────────────────────────────────────────────────
+        try:
+            if file is not None:
+                result = cloudinary.uploader.upload(
+                    file,
+                    folder="lego_scans",
+                    public_id=f"lego_scan_{ts}",
+                )
+            else:
+                if "," in base64_data:
+                    base64_data = base64_data.split(",", 1)[1]
+                result = cloudinary.uploader.upload(
+                    f"data:image/jpeg;base64,{base64_data}",
+                    folder="lego_scans",
+                    public_id=f"lego_scan_{ts}",
+                )
+            url = result["secure_url"]
+            logger.info(f"Uploaded to Cloudinary: {url}")
+            return url
+        except Exception as e:
+            logger.error(f"Cloudinary upload failed: {e} — falling back to local storage")
 
 # ---------------------------------------------------------------------------
 # AUTHENTICATION ENDPOINTS
@@ -637,44 +678,50 @@ def _save_upload(file=None, base64_data=None) -> str:
 
 @app.route('/api/auth/register', methods=['POST'])
 def auth_register():
-    """Register a new user"""
+    """Register a new user and send an email verification link."""
     data = request.json
-    
+ 
     if not data or not data.get('email') or not data.get('password'):
         return jsonify({'success': False, 'error': 'Email and password required'}), 400
-    
-    # Check if user exists
+ 
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'success': False, 'error': 'Email already registered'}), 400
-    
-    # Create new user
+ 
     username = data.get('username', data['email'].split('@')[0])
     if User.query.filter_by(username=username).first():
-        username = f"{username}_{datetime.utcnow().timestamp()}"
-    
-    user = User(
-        username=username,
-        email=data['email']
-    )
+        username = f"{username}_{int(datetime.utcnow().timestamp())}"
+ 
+    user = User(username=username, email=data['email'])
     user.set_password(data['password'])
-    
+    verification_token = user.generate_verification_token()
+ 
     db.session.add(user)
     db.session.commit()
-    
-    # Generate token
+ 
+    # Send verification email — failure here does NOT stop registration
+    email_sent = email_service.send_verification_email(
+        to_email=user.email,
+        username=user.username,
+        token=verification_token,
+    )
+ 
     token = user.generate_auth_token()
-    
+ 
     return jsonify({
         'success': True,
-        'message': 'User created successfully',
+        'message': 'Account created! Check your email to verify your address.',
         'token': token,
+        'email_sent': email_sent,
         'user': {
             'id': user.id,
             'username': user.username,
             'email': user.email,
-            'created_at': user.created_at.isoformat()
+            'email_verified': user.email_verified,
+            'created_at': user.created_at.isoformat(),
         }
     }), 201
+ 
+
 
 @app.route('/api/auth/login', methods=['POST'])
 def auth_login():
@@ -752,6 +799,149 @@ def auth_change_password(current_user):
     db.session.commit()
     
     return jsonify({'success': True, 'message': 'Password updated successfully'})
+
+
+#new api endpoints
+
+@app.route('/api/auth/verify-email', methods=['POST'])
+def verify_email():
+    """
+    Verify a user's email using the token from the verification email.
+    Marks account as verified and sends a welcome email.
+    """
+    data  = request.json or {}
+    token = data.get('token', '').strip()
+ 
+    if not token:
+        return jsonify({'success': False, 'error': 'Verification token required'}), 400
+ 
+    user = User.query.filter_by(verification_token=token).first()
+    if not user:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid or expired verification link. Please request a new one.'
+        }), 400
+ 
+    if user.email_verified:
+        return jsonify({'success': True, 'message': 'Email already verified'})
+ 
+    user.email_verified      = True
+    user.verification_token  = None
+    db.session.commit()
+ 
+    email_service.send_welcome_email(user.email, user.username)
+ 
+    return jsonify({
+        'success': True,
+        'message': 'Email verified! Welcome to LEGO Brick App.'
+    })
+ 
+ 
+@app.route('/api/auth/resend-verification', methods=['POST'])
+@token_required
+def resend_verification(current_user):
+    """Resend the verification email to the currently logged-in user."""
+    if current_user.email_verified:
+        return jsonify({'success': False, 'error': 'Email is already verified'}), 400
+ 
+    token = current_user.generate_verification_token()
+    db.session.commit()
+ 
+    sent = email_service.send_verification_email(
+        to_email=current_user.email,
+        username=current_user.username,
+        token=token,
+    )
+ 
+    if sent:
+        return jsonify({
+            'success': True,
+            'message': f'Verification email sent to {current_user.email}'
+        })
+    return jsonify({'success': False, 'error': 'Failed to send email. Try again later.'}), 500
+ 
+ 
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    """
+    Request a password reset email.
+    Always returns the same response regardless of whether the email
+    exists — this prevents revealing which emails are registered.
+    """
+    data  = request.json or {}
+    email = data.get('email', '').strip().lower()
+ 
+    if not email:
+        return jsonify({'success': False, 'error': 'Email required'}), 400
+ 
+    # Always the same generic message
+    generic = jsonify({
+        'success': True,
+        'message': 'If that email is registered, you will receive a reset link shortly.'
+    })
+ 
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return generic  # Do not reveal whether email exists
+ 
+    token = user.generate_reset_token()
+    db.session.commit()
+ 
+    email_service.send_password_reset_email(
+        to_email=user.email,
+        username=user.username,
+        token=token,
+    )
+ 
+    return generic
+ 
+ # **DELETE, used or testing/debugging
+print("=== Registered Routes ===")
+for rule in app.url_map.iter_rules():
+    print(f"{rule.endpoint}: {rule.methods} {rule.rule}")
+print("========================")
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password():
+    """
+    Reset password using the token from the reset email.
+    Token is valid for 1 hour and cannot be reused after a successful reset.
+    """
+    data         = request.json or {}
+    token        = data.get('token', '').strip()
+    new_password = data.get('new_password', '').strip()
+ 
+    if not token or not new_password:
+        return jsonify({'success': False, 'error': 'Token and new_password required'}), 400
+ 
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
+ 
+    user = User.query.filter_by(reset_token=token).first()
+    if not user:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid or expired reset link. Please request a new one.'
+        }), 400
+ 
+    if user.reset_token_expires and datetime.utcnow() > user.reset_token_expires:
+        user.reset_token         = None
+        user.reset_token_expires = None
+        db.session.commit()
+        return jsonify({
+            'success': False,
+            'error': 'This reset link has expired. Please request a new one.'
+        }), 400
+ 
+    user.set_password(new_password)
+    user.reset_token         = None
+    user.reset_token_expires = None
+    db.session.commit()
+ 
+    return jsonify({
+        'success': True,
+        'message': 'Password reset successfully. You can now log in.'
+    })
 
 # ---------------------------------------------------------------------------
 # UPDATED INVENTORY ENDPOINTS (with authentication)
@@ -1459,5 +1649,6 @@ def internal_error(e):
 
 # Entrypoint
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port)
 
