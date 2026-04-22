@@ -1250,17 +1250,12 @@ class _ScanScreenState extends State<ScanScreen> {
   String? _errorMessage;
   XFile? _selectedImage;
   List<dynamic> _detectionResults = [];
-  String _selectedDetector = 'azure'; // 'azure' | 'onnx' | 'gemini'
+  String _selectedDetector = 'azure'; // 'azure' | 'onnx'
   
   // ONNX detection state
   List<dynamic> _onnxResults = [];
   bool _isDetectingOnnx = false;
   String? _onnxError;
-
-  // Gemini detection state
-  List<dynamic> _geminiResults = [];
-  bool _isDetectingGemini = false;
-  String? _geminiError;
 
   // ---- actions ----
 
@@ -1273,9 +1268,6 @@ class _ScanScreenState extends State<ScanScreen> {
         _onnxResults = [];
         _onnxError = null;
         _isDetectingOnnx = false;
-        _geminiResults = [];
-        _geminiError = null;
-        _isDetectingGemini = false;
       });
 
   Future<void> _pickImage(ImageSource source) async {
@@ -1473,89 +1465,6 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
   
-  Future<void> _detectWithGemini() async {
-    if (_selectedImage == null) return;
-    
-    setState(() {
-      _isDetectingGemini = true;
-      _geminiError = null;
-      _geminiResults = [];
-    });
-
-    try {
-      final result = await ApiService.detectWithGemini(_selectedImage!);
-      
-      if (result['success'] == true) {
-        setState(() {
-          _geminiResults = result['results'] ?? [];
-          _isDetectingGemini = false;
-        });
-        
-        if (mounted && _geminiResults.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Row(children: [
-              const Icon(Icons.check_circle, color: Colors.white),
-              const SizedBox(width: 12),
-              Text('Gemini found ${_geminiResults.length} brick type(s)!'),
-            ]),
-            backgroundColor: const Color(0xFF1565C0),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ));
-        }
-      } else {
-        setState(() {
-          _geminiError = result['error'] ?? 'Gemini detection failed.';
-          _isDetectingGemini = false;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_geminiError!),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ));
-        }
-      }
-    } catch (e) {
-      setState(() {
-        _isDetectingGemini = false;
-        _geminiError = e.toString();
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Gemini Detection failed: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-    }
-  }
-  
-  Future<void> _addGeminiToInventory() async {
-    if (_geminiResults.isEmpty) return;
-    
-    final bricks = _geminiResults.map((brick) => {
-      'id': brick['brick_id'] ?? brick['id'] ?? '0000',
-      'name': brick['brick_name'] ?? brick['name'] ?? 'Unknown',
-      'color': brick['color'] ?? 'Unknown',
-      'quantity': brick['count'] ?? brick['quantity'] ?? 1,
-    }).toList();
-    
-    final result = await ApiService.addToInventory(bricks);
-    if (result['success'] == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Row(children: [
-          Icon(Icons.check_circle, color: Colors.white),
-          SizedBox(width: 8),
-          Text('✓ Gemini bricks added to inventory'),
-        ]),
-        backgroundColor: const Color(0xFF1565C0),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ));
-    }
-  }
-  
   Future<void> _addAllToInventory() async {
     if (_scannedBricks.isEmpty) return;
     
@@ -1623,10 +1532,6 @@ class _ScanScreenState extends State<ScanScreen> {
           if (_onnxResults.isNotEmpty || _onnxError != null) ...[
             const SizedBox(height: 16),
             _buildOnnxResultsSection(),
-          ],
-          if (_geminiResults.isNotEmpty || _geminiError != null) ...[
-            const SizedBox(height: 16),
-            _buildGeminiResultsSection(),
           ],
           const SizedBox(height: 32),
         ],
@@ -1804,7 +1709,7 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Widget _detectorSelectorCard() {
-    final isRunning = _isDetecting || _isDetectingOnnx || _isDetectingGemini;
+    final isRunning = _isDetecting || _isDetectingOnnx;
     return Column(
       children: [
         // Vertical method selector
@@ -1830,14 +1735,6 @@ class _ScanScreenState extends State<ScanScreen> {
               selected: _selectedDetector == 'onnx',
               onTap: () => setState(() => _selectedDetector = 'onnx'),
             ),
-            Divider(height: 1, thickness: 1, color: LegoApp.legoBorder),
-            _MethodTile(
-              icon: Icons.auto_awesome,
-              label: 'Gemini AI',
-              desc: 'AI-powered analysis',
-              selected: _selectedDetector == 'gemini',
-              onTap: () => setState(() => _selectedDetector = 'gemini'),
-            ),
           ]),
         ),
         const SizedBox(height: 12),
@@ -1851,7 +1748,6 @@ class _ScanScreenState extends State<ScanScreen> {
               switch (_selectedDetector) {
                 case 'azure': _detectBricks(); break;
                 case 'onnx': _detectWithOnnx(); break;
-                case 'gemini': _detectWithGemini(); break;
               }
             } : null,
             icon: isRunning
@@ -1862,7 +1758,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 : const Icon(Icons.search),
             label: Text(isRunning
                 ? 'Detecting...'
-                : 'Detect with ${_selectedDetector == 'azure' ? 'Azure' : _selectedDetector == 'onnx' ? 'ONNX' : 'Gemini'}'),
+                : 'Detect with ${_selectedDetector == 'azure' ? 'Azure' : 'ONNX'}'),
             style: ElevatedButton.styleFrom(
               backgroundColor: LegoApp.legoRed,
               foregroundColor: Colors.white,
@@ -2136,83 +2032,6 @@ class _ScanScreenState extends State<ScanScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: _addOnnxToInventory,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGeminiResultsSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.auto_awesome, color: Color(0xFFFFD700), size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Gemini Flash Results',
-                  style: GoogleFonts.outfit(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: LegoApp.legoDark,
-                  ),
-                ),
-                const Spacer(),
-                if (_geminiResults.isNotEmpty)
-                  Chip(
-                    label: Text('${_geminiResults.length} types'),
-                    backgroundColor: const Color(0xFFFFD700),
-                    labelStyle: const TextStyle(color: Colors.black, fontSize: 12),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_geminiError != null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Text(_geminiError!, style: const TextStyle(color: Colors.red)),
-              ),
-            if (_geminiResults.isEmpty && _geminiError == null)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'No bricks detected by Gemini model.',
-                  style: TextStyle(color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ..._geminiResults.map((brick) => _detectionResultCard(brick)).toList(),
-            if (_geminiResults.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.add_circle_outline),
-                    label: const Text('Add Gemini Results to Inventory'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: LegoApp.legoRed,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(LegoApp.radiusBtn)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: _addGeminiToInventory,
                   ),
                 ),
               ),
