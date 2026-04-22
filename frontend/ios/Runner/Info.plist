@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access for live LEGO brick detection.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to select images for LEGO brick detection.</string>
 </dict>
 </plist>
