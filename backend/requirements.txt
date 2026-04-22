@@ -29,5 +29,6 @@ psycopg2-binary
 PyJWT
 sendgrid
 gunicorn
+cloudinary
 
 # Use "py -m pip install -r requirements.txt"
