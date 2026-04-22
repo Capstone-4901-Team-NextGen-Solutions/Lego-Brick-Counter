@@ -28,6 +28,6 @@ flask-bcrypt
 psycopg2-binary
 PyJWT
 sendgrid
-
+gunicorn
 
 # Use "py -m pip install -r requirements.txt"

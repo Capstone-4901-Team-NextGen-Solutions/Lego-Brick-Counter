@@ -36,6 +36,7 @@ except ImportError:
 # Load environment variables FIRST
 load_dotenv()
 
+
 # Create Flask app
 app = Flask(__name__)
 CORS(app)
@@ -60,6 +61,13 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin
 import jwt
+
+# Fix Render's postgres:// prefix — SQLAlchemy requires postgresql://
+_database_url = os.getenv('DATABASE_URL', 'sqlite:///lego_app.db')
+if _database_url.startswith('postgres://'):
+    _database_url = _database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = _database_url 
+
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
@@ -610,24 +618,24 @@ def handle_errors(f):
     return wrapper
 
 
-def _save_upload(file=None, base64_data=None) -> str:
-    """Save an uploaded file or base64 payload; returns the filepath."""
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    if file is not None:
-        fname = f"lego_scan_{ts}_{secure_filename(file.filename)}"
-        fpath = os.path.join(UPLOAD_FOLDER, fname)
-        file.save(fpath)
-        return fpath
+import cloudinary
+import cloudinary.uploader
 
-    # base64
-    if "," in base64_data:
-        base64_data = base64_data.split(",", 1)[1]
-    img_bytes = base64.b64decode(base64_data)
-    img = Image.open(io.BytesIO(img_bytes))
-    fname = f"lego_scan_{ts}.jpg"
-    fpath = os.path.join(UPLOAD_FOLDER, fname)
-    img.save(fpath, "JPEG")
-    return fpath
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+)
+
+def _save_upload(file=None, base64_data=None) -> str:
+    """Upload image to Cloudinary and return the public URL."""
+    if file is not None:
+        result = cloudinary.uploader.upload(file)
+    else:
+        if ',' in base64_data:
+            base64_data = base64_data.split(',', 1)[1]
+        result = cloudinary.uploader.upload(f"data:image/jpeg;base64,{base64_data}")
+    return result['secure_url']
 
 # ---------------------------------------------------------------------------
 # AUTHENTICATION ENDPOINTS
