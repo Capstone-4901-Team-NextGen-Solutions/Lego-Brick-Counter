@@ -17,10 +17,6 @@ import base64
 import io
 import numpy as np
 
-#email verification imports
-import secrets
-from email_service import email_service
-
 from brick_detector import BrickDetector
 from pinecone_service import PineconeService
 from color_detector import LegoColorClassifier
@@ -47,6 +43,16 @@ except Exception as e:
 # Load environment variables FIRST
 load_dotenv()
 
+# Try to import Gemini detector (optional)
+try:
+    from gemini_detector import GeminiDetector
+    gemini_detector = GeminiDetector()
+    logger = logging.getLogger(__name__)
+    logger.info(f"[Startup] Gemini detector: {'ready' if gemini_detector.loaded else 'not configured'}")
+except Exception as e:
+    gemini_detector = None
+    logger = logging.getLogger(__name__)
+    logger.warning(f"[Startup] Gemini detector failed to initialize: {e}")
 
 # Create Flask app
 app = Flask(__name__)
@@ -72,13 +78,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin
 import jwt
-
-# Fix Render's postgres:// prefix — SQLAlchemy requires postgresql://
-_database_url = os.getenv('DATABASE_URL', 'sqlite:///lego_app.db')
-if _database_url.startswith('postgres://'):
-    _database_url = _database_url.replace('postgres://', 'postgresql://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = _database_url 
-
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
@@ -113,12 +112,6 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
-
-    #Email verification variables
-    email_verified      = db.Column(db.Boolean, default=False)
-    verification_token  = db.Column(db.String(100), unique=True, nullable=True)
-    reset_token         = db.Column(db.String(100), unique=True, nullable=True)
-    reset_token_expires = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     scan_history = db.relationship('ScanHistory', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -137,17 +130,6 @@ class User(UserMixin, db.Model):
             app.config['JWT_SECRET_KEY'],
             algorithm='HS256'
         )
-
-    def generate_verification_token(self):
-        """Generate a unique email verification token and save it to the DB."""
-        self.verification_token = secrets.token_urlsafe(32)
-        return self.verification_token
-        
-    def generate_reset_token(self):
-        """Generate a password reset token valid for 1 hour."""
-        self.reset_token = secrets.token_urlsafe(32)
-        self.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
-        return self.reset_token
     
     @staticmethod
     def verify_auth_token(token):
@@ -630,24 +612,24 @@ def handle_errors(f):
     return wrapper
 
 
-import cloudinary
-import cloudinary.uploader
-
-cloudinary.config(
-    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
-    api_key=os.getenv('CLOUDINARY_API_KEY'),
-    api_secret=os.getenv('CLOUDINARY_API_SECRET'),
-)
-
 def _save_upload(file=None, base64_data=None) -> str:
-    """Upload image to Cloudinary and return the public URL."""
+    """Save an uploaded file or base64 payload; returns the filepath."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     if file is not None:
-        result = cloudinary.uploader.upload(file)
-    else:
-        if ',' in base64_data:
-            base64_data = base64_data.split(',', 1)[1]
-        result = cloudinary.uploader.upload(f"data:image/jpeg;base64,{base64_data}")
-    return result['secure_url']
+        fname = f"lego_scan_{ts}_{secure_filename(file.filename)}"
+        fpath = os.path.join(UPLOAD_FOLDER, fname)
+        file.save(fpath)
+        return fpath
+
+    # base64
+    if "," in base64_data:
+        base64_data = base64_data.split(",", 1)[1]
+    img_bytes = base64.b64decode(base64_data)
+    img = Image.open(io.BytesIO(img_bytes))
+    fname = f"lego_scan_{ts}.jpg"
+    fpath = os.path.join(UPLOAD_FOLDER, fname)
+    img.save(fpath, "JPEG")
+    return fpath
 
 # ---------------------------------------------------------------------------
 # AUTHENTICATION ENDPOINTS
@@ -1156,6 +1138,105 @@ def detect_with_onnx(current_user):
             'success': False,
             'error': f'ONNX detection failed: {str(e)}',
             'detector_used': 'ONNX YOLOv8'
+        }), 500
+
+
+@app.route('/api/detect/gemini', methods=['POST'])
+@token_required
+def detect_with_gemini(current_user):
+    """Detect LEGO bricks using Google Gemini Flash multimodal model"""
+    try:
+        # Check detector is ready
+        if gemini_detector is None or not gemini_detector.loaded:
+            return jsonify({
+                'success': False,
+                'error': 'Gemini detector not configured. Add GEMINI_API_KEY to .env file.',
+                'detector_used': 'Gemini Flash'
+            }), 503
+
+        # Get uploaded file — same pattern as /api/upload
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+        if not _allowed(file.filename):
+            return jsonify({'success': False, 'error': 'File type not allowed'}), 400
+
+        # Save file
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        filename = f"gemini_scan_{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+        logger.info(f'[Gemini] File saved: {filepath}')
+
+        # Run Gemini detection
+        raw_results = gemini_detector.detect_bricks(filepath)
+        logger.info(f'[Gemini] Raw results: {raw_results}')
+
+        # Color detection — Gemini already returns color names
+        # but run through our classifier too for consistency
+        results = []
+        for r in raw_results:
+            gemini_color = r.get('color', 'Unknown')
+            # Use Gemini's color if it returned one, otherwise use our classifier
+            if gemini_color and gemini_color != 'Unknown':
+                color = gemini_color
+            else:
+                color = color_classifier.detect_color_from_image(filepath)
+
+            results.append({
+                'brick_name':   r.get('brick_name', 'Unknown'),
+                'color':        color,
+                'count':        int(r.get('count', 1)),
+                'confidence':   float(r.get('confidence', 0.90)),
+                'bounding_box': {}
+            })
+
+        total_bricks = sum(r['count'] for r in results)
+        unique_types = len(set(r['brick_name'] for r in results))
+
+        # Save to scan history
+        try:
+            import json
+            new_scan = ScanHistory(
+                user_id=current_user.id,
+                image_path=filename,
+                total_bricks=total_bricks,
+                unique_types=unique_types,
+                scan_results=json.dumps(results)
+            )
+            db.session.add(new_scan)
+            db.session.commit()
+            logger.info(f'[Gemini] Scan saved to history id={new_scan.id}')
+        except Exception as db_err:
+            logger.warning(f'[Gemini] Could not save scan history: {db_err}')
+            db.session.rollback()
+
+        return jsonify({
+            'success':       True,
+            'total_bricks':  total_bricks,
+            'unique_types':  unique_types,
+            'detector_used': 'Gemini Flash',
+            'results':       results
+        })
+
+    except Exception as e:
+        logger.error(f'[Gemini] Detection error: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        
+        error_msg = str(e)
+        # Give user-friendly message for quota errors
+        if '429' in error_msg or 'quota' in error_msg.lower() or 'RESOURCE_EXHAUSTED' in error_msg:
+            friendly = 'Gemini free tier quota exceeded for all available models. Try again in a few minutes or create a new Google Cloud project at console.cloud.google.com/projectcreate and generate a fresh API key.'
+        else:
+            friendly = f'Gemini detection failed: {error_msg}'
+        
+        return jsonify({
+            'success': False,
+            'error': friendly,
+            'detector_used': 'Gemini Flash'
         }), 500
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
+import 'shared_widgets.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'dart:convert';
@@ -26,11 +27,20 @@ void main() async {
 class LegoApp extends StatelessWidget {
   const LegoApp({super.key});
 
-  static const Color legoYellow = Color(0xFFFFD700);
-  static const Color legoRed = Color(0xFFD01012);
-  static const Color legoBlue = Color(0xFF006DB7);
-  static const Color legoBg = Color(0xFFF5F5F5);
-  static const Color legoDark = Color(0xFF1A1A2E);
+  static const Color legoRed     = Color(0xFFC91A09);
+  static const Color legoYellow  = Color(0xFFFFD700);
+  static const Color legoDark    = Color(0xFF1A1F2E);
+  static const Color legoBlue    = Color(0xFF006DB7);
+  static const Color legoSurface = Color(0xFFFFFFFF);
+  static const Color legoBg      = Color(0xFFF5F5F5);
+  static const Color legoMuted   = Color(0xFF888888);
+  static const Color legoBorder  = Color(0xFFEEEEEE);
+
+  static const double radiusCard  = 16;
+  static const double radiusBtn   = 12;
+  static const double radiusBadge = 8;
+  static const double pagePadding = 16;
+  static const double cardPadding = 16;
 
   @override
   Widget build(BuildContext context) {
@@ -41,24 +51,28 @@ class LegoApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
-          colorSchemeSeed: legoYellow,
+          colorSchemeSeed: legoRed,
           brightness: Brightness.light,
           scaffoldBackgroundColor: legoBg,
-          textTheme: GoogleFonts.nunitoTextTheme(),
+          textTheme: GoogleFonts.outfitTextTheme(),
           appBarTheme: AppBarTheme(
             backgroundColor: legoDark,
             foregroundColor: Colors.white,
             elevation: 0,
             centerTitle: true,
-            titleTextStyle: GoogleFonts.nunito(
+            titleTextStyle: GoogleFonts.outfit(
               fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white,
             ),
           ),
           cardTheme: CardThemeData(
-            elevation: 3,
-            shadowColor: Colors.black26,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: legoBorder),
+            ),
             surfaceTintColor: Colors.white,
+            color: legoSurface,
           ),
           elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
@@ -66,15 +80,15 @@ class LegoApp extends StatelessWidget {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-              textStyle: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16),
+              textStyle: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 16),
             ),
           ),
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
             fillColor: Colors.white,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: legoBlue, width: 2)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: legoBorder)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: legoRed, width: 2)),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
           pageTransitionsTheme: const PageTransitionsTheme(builders: {
@@ -199,115 +213,184 @@ class _AuthPageState extends State<AuthPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: LegoApp.legoBg,
-      body: Center(
-        child: SingleChildScrollView(
-          child: SizedBox(
-            width: 420,
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+      body: Column(
+        children: [
+          // ── RED HERO HEADER with stud-dot pattern ──
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 32,
+              bottom: 40,
+            ),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFFC91A09), Color(0xFF8B1207)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
+              ),
+            ),
+            child: Stack(
+              children: [
+                // Stud dot pattern overlay
+                Positioned.fill(
+                  child: CustomPaint(painter: _StudPatternPainter()),
+                ),
+                Column(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: LegoApp.legoYellow.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Icon(Icons.view_in_ar, size: 48, color: LegoApp.legoRed),
+                      child: const Icon(Icons.view_in_ar, size: 48, color: Colors.white),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     Text(
-                      isLogin ? 'Welcome Back!' : 'Create Account',
-                      style: GoogleFonts.nunito(fontSize: 26, fontWeight: FontWeight.w800, color: LegoApp.legoDark),
+                      'LEGO Brick Counter',
+                      style: GoogleFonts.outfit(
+                        fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       isLogin ? 'Sign in to continue' : 'Join the LEGO community',
-                      style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                    ),
-                    const SizedBox(height: 28),
-                    if (!isLogin) ...[
-                      TextField(
-                        controller: _username,
-                        decoration: const InputDecoration(
-                          labelText: 'Username (optional)',
-                          prefixIcon: Icon(Icons.person_outline, color: LegoApp.legoBlue),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    TextField(
-                      controller: _email,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined, color: LegoApp.legoBlue),
-                      ),
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _pass,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: Icon(Icons.lock_outline, color: LegoApp.legoBlue),
-                      ),
-                    ),
-                    if (!isLogin) ...[
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _confirm,
-                        obscureText: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Confirm Password',
-                          prefixIcon: Icon(Icons.lock_outline, color: LegoApp.legoBlue),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 28),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: _isLoading
-                          ? Shimmer.fromColors(
-                              key: const ValueKey('loading'),
-                              baseColor: Colors.grey.shade300,
-                              highlightColor: Colors.grey.shade100,
-                              child: Container(width: double.infinity, height: 50, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12))),
-                            )
-                          : SizedBox(
-                              key: const ValueKey('button'),
-                              width: double.infinity,
-                              height: 50,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  HapticFeedback.lightImpact();
-                                  _submit();
-                                },
-                                child: Text(isLogin ? 'Login' : 'Register'),
-                              ),
-                            ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: () {
-                        if (!_isLoading) setState(() => isLogin = !isLogin);
-                      },
-                      child: Text(
-                        isLogin ? 'New here? Create an account' : 'Already have an account? Login',
-                        style: TextStyle(color: LegoApp.legoBlue, fontWeight: FontWeight.w600),
+                      style: GoogleFonts.outfit(
+                        fontSize: 14, color: Colors.white.withValues(alpha: 0.8),
                       ),
                     ),
                   ],
                 ),
+              ],
+            ),
+          ),
+
+          // ── WHITE FORM CARD ──
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: Transform.translate(
+                offset: const Offset(0, -24),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+                  decoration: BoxDecoration(
+                    color: LegoApp.legoSurface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: LegoApp.legoBorder),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isLogin ? 'Welcome Back!' : 'Create Account',
+                        style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.w800, color: LegoApp.legoDark),
+                      ),
+                      const SizedBox(height: 24),
+                      if (!isLogin) ...[
+                        TextField(
+                          controller: _username,
+                          decoration: const InputDecoration(
+                            labelText: 'Username (optional)',
+                            prefixIcon: Icon(Icons.person_outline, color: LegoApp.legoRed),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      TextField(
+                        controller: _email,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          prefixIcon: Icon(Icons.email_outlined, color: LegoApp.legoRed),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pass,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: Icon(Icons.lock_outline, color: LegoApp.legoRed),
+                        ),
+                      ),
+                      if (!isLogin) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _confirm,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Confirm Password',
+                            prefixIcon: Icon(Icons.lock_outline, color: LegoApp.legoRed),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 28),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: _isLoading
+                            ? Shimmer.fromColors(
+                                key: const ValueKey('loading'),
+                                baseColor: Colors.grey.shade300,
+                                highlightColor: Colors.grey.shade100,
+                                child: Container(width: double.infinity, height: 50, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12))),
+                              )
+                            : SizedBox(
+                                key: const ValueKey('button'),
+                                width: double.infinity,
+                                height: 50,
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    HapticFeedback.lightImpact();
+                                    _submit();
+                                  },
+                                  child: Text(isLogin ? 'Login' : 'Register'),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () {
+                          if (!_isLoading) setState(() => isLogin = !isLogin);
+                        },
+                        child: Text(
+                          isLogin ? 'New here? Create an account' : 'Already have an account? Login',
+                          style: const TextStyle(color: LegoApp.legoRed, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+/// Stud-dot pattern painter for the hero header
+class _StudPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.08)
+      ..style = PaintingStyle.fill;
+    const spacing = 32.0;
+    const radius = 6.0;
+    for (double x = spacing / 2; x < size.width; x += spacing) {
+      for (double y = spacing / 2; y < size.height; y += spacing) {
+        canvas.drawCircle(Offset(x, y), radius, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ---------------------------------------------------------------------------
@@ -433,25 +516,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   
   @override
   Widget build(BuildContext context) {
+    final auth = Provider.of<AuthService>(context, listen: false);
+    final username = auth.user?['username'] ?? 'Builder';
+
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.widgets, color: Color(0xFFFFD700), size: 24),
-            Text(' LEGO Inventory', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
-          ],
-        ),
-        backgroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDashboard,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
       body: _error != null
           ? Center(
               child: Column(
@@ -468,93 +536,138 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             )
-          : SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // A) Welcome Banner
-                    Container(
-                      height: 100,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFFD700), Color(0xFFFFA000)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+          : CustomScrollView(
+              slivers: [
+                // ── DARK HERO HEADER ──
+                SliverToBoxAdapter(
+                  child: Container(
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top + 16,
+                      left: 20,
+                      right: 20,
+                      bottom: 24,
+                    ),
+                    decoration: const BoxDecoration(
+                      color: LegoApp.legoDark,
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(28),
+                        bottomRight: Radius.circular(28),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                  'Welcome back!',
-                                  style: GoogleFonts.nunito(
+                                  'Hello, $username!',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w800,
                                     color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 20,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                const Text(
-                                  'Ready to scan some bricks?',
-                                  style: TextStyle(color: Colors.white, fontSize: 14),
+                                Text(
+                                  'What will you build today?',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 14,
+                                    color: Colors.white70,
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                          Icon(
-                            Icons.construction,
-                            size: 48,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // B) Stats Row
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildStatCard(
-                            Icons.widgets,
-                            _data['totalBricks'] ?? 0,
-                            'Total Bricks',
-                          ),
+                            IconButton(
+                              icon: const Icon(Icons.refresh, color: Colors.white70),
+                              onPressed: _loadDashboard,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildStatCard(
-                            Icons.category_outlined,
-                            _data['uniqueTypes'] ?? 0,
-                            'Brick Types',
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildStatCard(
-                            Icons.document_scanner_outlined,
-                            _data['totalScans'] ?? 0,
-                            'Scans Done',
-                          ),
+                        const SizedBox(height: 20),
+                        // ── STAT CHIPS ──
+                        Row(
+                          children: [
+                            _heroStatChip(Icons.widgets, '${_data['totalBricks'] ?? 0}', 'Bricks'),
+                            const SizedBox(width: 8),
+                            _heroStatChip(Icons.category_outlined, '${_data['uniqueTypes'] ?? 0}', 'Types'),
+                            const SizedBox(width: 8),
+                            _heroStatChip(Icons.document_scanner_outlined, '${_data['totalScans'] ?? 0}', 'Scans'),
+                          ],
                         ),
                       ],
                     ),
+                  ),
+                ),
+
+                // ── BODY ──
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      // ── SCAN CTA BANNER ──
+                      GestureDetector(
+                        onTap: widget.onScanTap,
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFD700), Color(0xFFFFA000)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Ready to scan?',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w800,
+                                        color: LegoApp.legoDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Identify bricks instantly with AI',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 14,
+                                        color: LegoApp.legoDark.withValues(alpha: 0.7),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: LegoApp.legoDark.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.camera_alt, color: LegoApp.legoDark, size: 28),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     
-                    // D) Recent Scan Card
-                    _sectionHeader('LAST SCAN'),
-                    Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: Padding(
+                      // D) Recent Scan
+                      _sectionHeader('LAST SCAN'),
+                      Container(
                         padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: LegoApp.legoSurface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: LegoApp.legoBorder),
+                        ),
                         child: _isLoading
                             ? Container(
                                 height: 50,
@@ -573,7 +686,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   )
                                 : Row(
                                     children: [
-                                      const Icon(Icons.access_time, color: Color(0xFFFFD700)),
+                                      const Icon(Icons.access_time, color: LegoApp.legoYellow),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
@@ -581,7 +694,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           children: [
                                             Text(
                                               'Most Recent Scan',
-                                              style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 14),
+                                              style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 14),
                                             ),
                                             Text(
                                               _formatDate(_data['lastScanDate']),
@@ -592,21 +705,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       ),
                                       Chip(
                                         label: Text('${_data['totalScans']} total'),
-                                        backgroundColor: const Color(0xFFFFD700).withOpacity(0.2),
+                                        backgroundColor: LegoApp.legoYellow.withValues(alpha: 0.2),
                                         padding: EdgeInsets.zero,
                                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                       ),
                                     ],
                                   ),
                       ),
-                    ),
-                    
-                    // E) Buildable Sets Card
-                    _sectionHeader('SETS YOU CAN BUILD'),
-                    Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: Padding(
+                      
+                      // E) Buildable Sets
+                      _sectionHeader('SETS YOU CAN BUILD'),
+                      Container(
                         padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: LegoApp.legoSurface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: LegoApp.legoBorder),
+                        ),
                         child: _isLoading
                             ? Container(
                                 height: 100,
@@ -630,7 +745,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             style: const TextStyle(
                                               fontSize: 40,
                                               fontWeight: FontWeight.w700,
-                                              color: Color(0xFFFFD700),
+                                              color: LegoApp.legoYellow,
                                             ),
                                           ),
                                           const SizedBox(width: 16),
@@ -640,7 +755,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               children: [
                                                 Text(
                                                   'sets are 50%+\ncomplete',
-                                                  style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 14),
+                                                  style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 14),
                                                 ),
                                                 Text(
                                                   'based on your inventory',
@@ -668,7 +783,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             Expanded(
                                               child: Text(
                                                 _data['topSet']['name'] ?? 'Unknown Set',
-                                                style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 15),
+                                                style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 15),
                                               ),
                                             ),
                                             Text(
@@ -676,7 +791,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 15,
-                                                color: Color(0xFFFFD700),
+                                                color: LegoApp.legoYellow,
                                               ),
                                             ),
                                           ],
@@ -687,7 +802,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           child: LinearProgressIndicator(
                                             value: (_data['topSet']['completion_percentage'] ?? 0) / 100,
                                             backgroundColor: Colors.grey[200],
-                                            color: const Color(0xFFFFD700),
+                                            color: LegoApp.legoYellow,
                                             minHeight: 8,
                                           ),
                                         ),
@@ -695,42 +810,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ],
                                   ),
                       ),
-                    ),
-                    
-                    // F) Quick Actions
-                    _sectionHeader('QUICK ACTIONS'),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: widget.onScanTap,
-                            icon: const Icon(Icons.camera_alt, color: Colors.black),
-                            label: const Text('Scan Now', style: TextStyle(color: Colors.black)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFD700),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                      
+                      // F) Quick Actions
+                      _sectionHeader('QUICK ACTIONS'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: widget.onScanTap,
+                              icon: const Icon(Icons.camera_alt, color: Colors.black),
+                              label: const Text('Scan Now', style: TextStyle(color: Colors.black)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LegoApp.legoYellow,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: widget.onInventoryTap,
-                            icon: const Icon(Icons.inventory_2, color: Color(0xFFFFD700)),
-                            label: const Text('Inventory', style: TextStyle(color: Color(0xFFFFD700))),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFFFD700)),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: widget.onInventoryTap,
+                              icon: const Icon(Icons.inventory_2, color: LegoApp.legoYellow),
+                              label: const Text('Inventory', style: TextStyle(color: LegoApp.legoYellow)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: LegoApp.legoYellow),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ]),
+                  ),
                 ),
-              ),
+              ],
             ),
     );
+  }
+
+  Widget _heroStatChip(IconData icon, String value, String label) {
+    return StatChip(label: label, value: value);
   }
   
   Widget _buildStatCard(IconData icon, int value, String label) {
@@ -757,7 +876,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     builder: (context, animValue, child) {
                       return Text(
                         animValue.toInt().toString(),
-                        style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 22),
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 22),
                       );
                     },
                   ),
@@ -994,7 +1113,7 @@ class _LiveDetectionScreenState extends State<LiveDetectionScreen> {
                 children: [
                   Text(
                     '${_detections.length} bricks detected',
-                    style: GoogleFonts.nunito(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 12),
                   Expanded(
@@ -1131,11 +1250,17 @@ class _ScanScreenState extends State<ScanScreen> {
   String? _errorMessage;
   XFile? _selectedImage;
   List<dynamic> _detectionResults = [];
+  String _selectedDetector = 'azure'; // 'azure' | 'onnx' | 'gemini'
   
   // ONNX detection state
   List<dynamic> _onnxResults = [];
   bool _isDetectingOnnx = false;
   String? _onnxError;
+
+  // Gemini detection state
+  List<dynamic> _geminiResults = [];
+  bool _isDetectingGemini = false;
+  String? _geminiError;
 
   // ---- actions ----
 
@@ -1148,6 +1273,9 @@ class _ScanScreenState extends State<ScanScreen> {
         _onnxResults = [];
         _onnxError = null;
         _isDetectingOnnx = false;
+        _geminiResults = [];
+        _geminiError = null;
+        _isDetectingGemini = false;
       });
 
   Future<void> _pickImage(ImageSource source) async {
@@ -1345,6 +1473,89 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
   
+  Future<void> _detectWithGemini() async {
+    if (_selectedImage == null) return;
+    
+    setState(() {
+      _isDetectingGemini = true;
+      _geminiError = null;
+      _geminiResults = [];
+    });
+
+    try {
+      final result = await ApiService.detectWithGemini(_selectedImage!);
+      
+      if (result['success'] == true) {
+        setState(() {
+          _geminiResults = result['results'] ?? [];
+          _isDetectingGemini = false;
+        });
+        
+        if (mounted && _geminiResults.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Text('Gemini found ${_geminiResults.length} brick type(s)!'),
+            ]),
+            backgroundColor: const Color(0xFF1565C0),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ));
+        }
+      } else {
+        setState(() {
+          _geminiError = result['error'] ?? 'Gemini detection failed.';
+          _isDetectingGemini = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(_geminiError!),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isDetectingGemini = false;
+        _geminiError = e.toString();
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Gemini Detection failed: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+  
+  Future<void> _addGeminiToInventory() async {
+    if (_geminiResults.isEmpty) return;
+    
+    final bricks = _geminiResults.map((brick) => {
+      'id': brick['brick_id'] ?? brick['id'] ?? '0000',
+      'name': brick['brick_name'] ?? brick['name'] ?? 'Unknown',
+      'color': brick['color'] ?? 'Unknown',
+      'quantity': brick['count'] ?? brick['quantity'] ?? 1,
+    }).toList();
+    
+    final result = await ApiService.addToInventory(bricks);
+    if (result['success'] == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Row(children: [
+          Icon(Icons.check_circle, color: Colors.white),
+          SizedBox(width: 8),
+          Text('✓ Gemini bricks added to inventory'),
+        ]),
+        backgroundColor: const Color(0xFF1565C0),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ));
+    }
+  }
+  
   Future<void> _addAllToInventory() async {
     if (_scannedBricks.isEmpty) return;
     
@@ -1413,6 +1624,10 @@ class _ScanScreenState extends State<ScanScreen> {
             const SizedBox(height: 16),
             _buildOnnxResultsSection(),
           ],
+          if (_geminiResults.isNotEmpty || _geminiError != null) ...[
+            const SizedBox(height: 16),
+            _buildGeminiResultsSection(),
+          ],
           const SizedBox(height: 32),
         ],
       ),
@@ -1427,7 +1642,7 @@ class _ScanScreenState extends State<ScanScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Scan LEGO Bricks', style: GoogleFonts.nunito(fontSize: 20, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+              Text('Scan LEGO Bricks', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
               if (_selectedImage != null && !_isDetecting)
                 IconButton(
                     icon: const Icon(Icons.close, size: 20),
@@ -1438,9 +1653,7 @@ class _ScanScreenState extends State<ScanScreen> {
           const SizedBox(height: 16),
           _imagePreviewArea(),
           const SizedBox(height: 16),
-          if (_selectedImage != null) _detectButton(),
-          if (_selectedImage != null) const SizedBox(height: 8),
-          if (_selectedImage != null) _detectOnnxButton(),
+          if (_selectedImage != null) _detectorSelectorCard(),
           if (_selectedImage == null) ...[
             _actionButtons(),
             const SizedBox(height: 12),
@@ -1548,7 +1761,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 const SizedBox(height: 12),
                 Text(
                   'Analyzing with Azure Vision...',
-                  style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -1590,64 +1803,76 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-  Widget _detectButton() {
-    final isEnabled = _selectedImage != null && !_isDetecting;
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: ElevatedButton.icon(
-        onPressed: isEnabled ? () {
-          HapticFeedback.lightImpact();
-          _detectBricks();
-        } : null,
-        icon: Icon(_isDetecting ? Icons.hourglass_empty : Icons.search),
-        label: Text(_isDetecting ? 'Detecting...' : 'Detect Bricks'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isEnabled ? const Color(0xFFFFD700) : Colors.grey,
-          foregroundColor: Colors.black,
-          disabledBackgroundColor: Colors.grey.shade300,
-          disabledForegroundColor: Colors.grey.shade600,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
-    );
-  }
-
-  Widget _detectOnnxButton() {
-    final isEnabled = _selectedImage != null && !_isDetectingOnnx;
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: ElevatedButton.icon(
-        onPressed: isEnabled ? () {
-          HapticFeedback.lightImpact();
-          _detectWithOnnx();
-        } : null,
-        icon: _isDetectingOnnx
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : const Icon(Icons.memory, color: Colors.white),
-        label: Text(
-          _isDetectingOnnx ? 'Running ONNX...' : 'Detect ONNX',
-          style: const TextStyle(
+  Widget _detectorSelectorCard() {
+    final isRunning = _isDetecting || _isDetectingOnnx || _isDetectingGemini;
+    return Column(
+      children: [
+        // Vertical method selector
+        Container(
+          decoration: BoxDecoration(
             color: Colors.white,
-            fontWeight: FontWeight.bold,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: LegoApp.legoBorder),
+          ),
+          child: Column(children: [
+            _MethodTile(
+              icon: Icons.cloud_outlined,
+              label: 'Azure API',
+              desc: 'Fast cloud-based detection',
+              selected: _selectedDetector == 'azure',
+              onTap: () => setState(() => _selectedDetector = 'azure'),
+            ),
+            Divider(height: 1, thickness: 1, color: LegoApp.legoBorder),
+            _MethodTile(
+              icon: Icons.memory_outlined,
+              label: 'ONNX',
+              desc: 'Local & private',
+              selected: _selectedDetector == 'onnx',
+              onTap: () => setState(() => _selectedDetector = 'onnx'),
+            ),
+            Divider(height: 1, thickness: 1, color: LegoApp.legoBorder),
+            _MethodTile(
+              icon: Icons.auto_awesome,
+              label: 'Gemini AI',
+              desc: 'AI-powered analysis',
+              selected: _selectedDetector == 'gemini',
+              onTap: () => setState(() => _selectedDetector = 'gemini'),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        // Single unified detect button
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton.icon(
+            onPressed: (_selectedImage != null && !isRunning) ? () {
+              HapticFeedback.lightImpact();
+              switch (_selectedDetector) {
+                case 'azure': _detectBricks(); break;
+                case 'onnx': _detectWithOnnx(); break;
+                case 'gemini': _detectWithGemini(); break;
+              }
+            } : null,
+            icon: isRunning
+                ? const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.search),
+            label: Text(isRunning
+                ? 'Detecting...'
+                : 'Detect with ${_selectedDetector == 'azure' ? 'Azure' : _selectedDetector == 'onnx' ? 'ONNX' : 'Gemini'}'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LegoApp.legoRed,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade300,
+              disabledForegroundColor: Colors.grey.shade600,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(LegoApp.radiusBtn)),
+            ),
           ),
         ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isEnabled ? const Color(0xFF1A1A2E) : Colors.grey,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Colors.grey.shade300,
-          disabledForegroundColor: Colors.grey.shade600,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
+      ],
     );
   }
 
@@ -1676,7 +1901,7 @@ class _ScanScreenState extends State<ScanScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 32),
             const SizedBox(height: 8),
-            Text(label, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700)),
+            Text(label, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
           ]),
         ),
       ),
@@ -1693,7 +1918,7 @@ class _ScanScreenState extends State<ScanScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Detection Results', style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+                Text('Detection Results', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
                 if (_scannedBricks.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1701,7 +1926,7 @@ class _ScanScreenState extends State<ScanScreen> {
                         color: LegoApp.legoRed.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(20)),
                     child: Text('${_scannedBricks.length} found',
-                        style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700, color: LegoApp.legoRed)),
+                        style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: LegoApp.legoRed)),
                   ),
               ],
             ),
@@ -1724,10 +1949,10 @@ class _ScanScreenState extends State<ScanScreen> {
                 child: FilledButton(
                   onPressed: _addAllToInventory,
                   style: FilledButton.styleFrom(
-                    backgroundColor: LegoApp.legoBlue,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    backgroundColor: LegoApp.legoRed,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(LegoApp.radiusBtn)),
                   ),
-                  child: Text('Add All to Inventory', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700)),
+                  child: Text('Add All to Inventory', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700)),
                 ),
               ),
             ],
@@ -1746,7 +1971,7 @@ class _ScanScreenState extends State<ScanScreen> {
           Icon(Icons.view_in_ar_outlined, size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text('No bricks detected yet',
-              style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey[500])),
+              style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey[500])),
           const SizedBox(height: 8),
           Text('Upload an image and click\n"Detect Bricks" to start',
               textAlign: TextAlign.center,
@@ -1765,7 +1990,7 @@ class _ScanScreenState extends State<ScanScreen> {
           Icon(Icons.warning_amber_rounded, size: 64, color: Colors.amber[700]),
           const SizedBox(height: 16),
           Text('No bricks detected',
-              style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.amber[800])),
+              style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.amber[800])),
           const SizedBox(height: 8),
           Text('Try a clearer photo with better lighting',
               textAlign: TextAlign.center,
@@ -1777,74 +2002,68 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Widget _brickResultCard(LegoBrick brick, dynamic rawData) {
     final conf = brick.confidence ?? 0;
+    final confPct = conf * 100;
     final quantity = rawData != null ? (rawData['count'] ?? rawData['quantity'] ?? brick.quantity) : brick.quantity;
     final colorName = brick.colorName ?? 'Unknown';
-    
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: brick.color, width: 3),
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(LegoApp.radiusCard),
+        border: Border.all(color: LegoApp.legoBorder),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        brick.name,
-                        style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700, color: LegoApp.legoDark),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 8,
-                            backgroundColor: brick.color,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            colorName,
-                            style: TextStyle(fontSize: 13, color: Colors.grey[700], fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Confidence: ${(conf * 100).toStringAsFixed(1)}%',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-                if (quantity > 1)
-                  Chip(
-                    label: Text('Qty: $quantity', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                    backgroundColor: LegoApp.legoYellow.withValues(alpha: 0.2),
-                    padding: EdgeInsets.zero,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-              ],
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(brick.name,
+                  style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+                Text('ID: ${brick.id}',
+                  style: const TextStyle(fontSize: 12, color: LegoApp.legoMuted)),
+              ]),
             ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: conf,
-                backgroundColor: Colors.grey.shade200,
-                color: const Color(0xFFFFD700),
-                minHeight: 8,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FFF0),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text('${confPct.toStringAsFixed(1)}%',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2a8a00))),
+            ),
+            if (quantity > 1) ...[
+              const SizedBox(width: 6),
+              LegoBadge('×$quantity'),
+            ],
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            Container(
+              width: 14, height: 14,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: brick.color,
+                border: Border.all(color: LegoApp.legoBorder),
               ),
             ),
-          ],
-        ),
+            const SizedBox(width: 8),
+            Text(colorName, style: const TextStyle(fontSize: 13, color: Color(0xFF555555))),
+          ]),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: conf,
+              minHeight: 4,
+              backgroundColor: LegoApp.legoBorder,
+              valueColor: const AlwaysStoppedAnimation(LegoApp.legoYellow),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1858,22 +2077,22 @@ class _ScanScreenState extends State<ScanScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.memory, color: Color(0xFF1A1A2E), size: 20),
+                const Icon(Icons.memory, color: Color(0xFFFFD700), size: 20),
                 const SizedBox(width: 8),
                 Text(
                   'ONNX YOLOv8 Results',
-                  style: GoogleFonts.nunito(
+                  style: GoogleFonts.outfit(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF1A1A2E),
+                    color: LegoApp.legoDark,
                   ),
                 ),
                 const Spacer(),
                 if (_onnxResults.isNotEmpty)
                   Chip(
                     label: Text('${_onnxResults.length} bricks'),
-                    backgroundColor: const Color(0xFF1A1A2E),
-                    labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                    backgroundColor: const Color(0xFFFFD700),
+                    labelStyle: const TextStyle(color: Colors.black, fontSize: 12),
                   ),
               ],
             ),
@@ -1901,89 +2120,19 @@ class _ScanScreenState extends State<ScanScreen> {
                   textAlign: TextAlign.center,
                 ),
               ),
-            ..._onnxResults.map((brick) => Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Container(
-                decoration: const BoxDecoration(
-                  border: Border(
-                    left: BorderSide(color: Color(0xFF1A1A2E), width: 4),
-                  ),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    bottomLeft: Radius.circular(12),
-                  ),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 18,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _colorFromName(brick['color']),
-                            border: Border.all(color: Colors.grey.shade400, width: 1),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            brick['brick_name'] ?? brick['class'] ?? 'Unknown Brick',
-                            style: GoogleFonts.nunito(fontWeight: FontWeight.bold, fontSize: 15),
-                          ),
-                        ),
-                        if ((brick['count'] ?? brick['quantity']) != null)
-                          Chip(
-                            label: Text('x${brick['count'] ?? brick['quantity']}'),
-                            backgroundColor: const Color(0xFF1A1A2E).withValues(alpha: 0.1),
-                            labelStyle: const TextStyle(fontSize: 11),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Confidence: ${((brick['confidence'] ?? 0) * 100).toStringAsFixed(1)}%',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                    ),
-                    const SizedBox(height: 4),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: (brick['confidence'] ?? 0).toDouble(),
-                        backgroundColor: Colors.grey[200],
-                        color: const Color(0xFF1A1A2E),
-                        minHeight: 6,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Color: ${brick['color'] ?? 'Unknown'}',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            )).toList(),
+            ..._onnxResults.map((brick) => _detectionResultCard(brick)).toList(),
             if (_onnxResults.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.add_circle_outline, color: Color(0xFF1A1A2E)),
-                    label: const Text(
-                      'Add ONNX Results to Inventory',
-                      style: TextStyle(color: Color(0xFF1A1A2E)),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF1A1A2E)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Add ONNX Results to Inventory'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LegoApp.legoRed,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(LegoApp.radiusBtn)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: _addOnnxToInventory,
@@ -1993,6 +2142,144 @@ class _ScanScreenState extends State<ScanScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildGeminiResultsSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome, color: Color(0xFFFFD700), size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Gemini Flash Results',
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: LegoApp.legoDark,
+                  ),
+                ),
+                const Spacer(),
+                if (_geminiResults.isNotEmpty)
+                  Chip(
+                    label: Text('${_geminiResults.length} types'),
+                    backgroundColor: const Color(0xFFFFD700),
+                    labelStyle: const TextStyle(color: Colors.black, fontSize: 12),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_geminiError != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Text(_geminiError!, style: const TextStyle(color: Colors.red)),
+              ),
+            if (_geminiResults.isEmpty && _geminiError == null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'No bricks detected by Gemini model.',
+                  style: TextStyle(color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ..._geminiResults.map((brick) => _detectionResultCard(brick)).toList(),
+            if (_geminiResults.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Add Gemini Results to Inventory'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LegoApp.legoRed,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(LegoApp.radiusBtn)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: _addGeminiToInventory,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detectionResultCard(Map<String, dynamic> brick) {
+    final name = brick['brick_name'] ?? brick['name'] ?? brick['class'] ?? 'Unknown Brick';
+    final brickId = brick['brick_id'] ?? brick['id'] ?? '—';
+    final colorName = brick['color'] ?? 'Unknown';
+    final brickColor = _colorFromName(colorName);
+    final conf = ((brick['confidence'] ?? 0) as num).toDouble();
+    final qty = brick['count'] ?? brick['quantity'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(LegoApp.radiusCard),
+        border: Border.all(color: LegoApp.legoBorder),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name, style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+              Text('ID: $brickId', style: const TextStyle(fontSize: 12, color: LegoApp.legoMuted)),
+            ]),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: const Color(0xFFF0FFF0), borderRadius: BorderRadius.circular(6)),
+            child: Text('${(conf * 100).toStringAsFixed(1)}%',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2a8a00))),
+          ),
+          if (qty != null) ...[
+            const SizedBox(width: 6),
+            LegoBadge('×$qty'),
+          ],
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Container(
+            width: 14, height: 14,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle, color: brickColor,
+              border: Border.all(color: LegoApp.legoBorder),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(colorName, style: const TextStyle(fontSize: 13, color: Color(0xFF555555))),
+        ]),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: conf,
+            minHeight: 4,
+            backgroundColor: LegoApp.legoBorder,
+            valueColor: const AlwaysStoppedAnimation(LegoApp.legoYellow),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -2048,6 +2335,59 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
+}
+
+class _MethodTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String desc;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _MethodTile({
+    required this.icon,
+    required this.label,
+    required this.desc,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(14),
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      color: selected ? const Color(0xFFFFF8F8) : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      child: Row(children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: selected ? LegoApp.legoRed : LegoApp.legoBg,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: selected ? Colors.white : LegoApp.legoMuted),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w700,
+                color: selected ? LegoApp.legoRed : const Color(0xFF1a1a1a),
+              )),
+              Text(desc, style: const TextStyle(fontSize: 12, color: LegoApp.legoMuted)),
+            ],
+          ),
+        ),
+        if (selected) const Icon(Icons.circle, size: 8, color: LegoApp.legoRed),
+      ]),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2231,7 +2571,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('My Inventory', style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+                    Text('My Inventory', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
                     Row(children: [
                       IconButton(
                         icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view, color: LegoApp.legoBlue),
@@ -2272,7 +2612,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.inventory_2, size: 80, color: Colors.grey[300]),
         const SizedBox(height: 16),
-        Text('Your inventory is empty', style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.grey[500])),
+        Text('Your inventory is empty', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.grey[500])),
         const SizedBox(height: 8),
         Text('Scan some LEGO bricks to get started!', style: TextStyle(color: Colors.grey[400])),
       ]),
@@ -2326,12 +2666,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ? Icon(Icons.view_in_ar, size: 18, color: Colors.grey[700])
                     : const Icon(Icons.view_in_ar, size: 18, color: Colors.white)),
               const SizedBox(height: 8),
-              Text(b.name, style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(b.name, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
               Text('ID: ${b.id}', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
               const SizedBox(height: 4),
               Row(mainAxisSize: MainAxisSize.min, children: [
                 InkWell(onTap: () => _updateQty(b, -1), child: const Icon(Icons.remove_circle_outline, size: 20, color: LegoApp.legoRed)),
-                Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text('${b.quantity}', style: GoogleFonts.nunito(fontWeight: FontWeight.w800))),
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text('${b.quantity}', style: GoogleFonts.outfit(fontWeight: FontWeight.w800))),
                 InkWell(onTap: () => _updateQty(b, 1), child: const Icon(Icons.add_circle_outline, size: 20, color: LegoApp.legoBlue)),
               ]),
             ]),
@@ -2342,20 +2682,36 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Widget _inventoryItem(LegoBrick b) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(radius: 20, backgroundColor: b.color,
-          child: b.color == Colors.white || b.color == Colors.yellow
-              ? Icon(Icons.view_in_ar, size: 18, color: Colors.grey[700])
-              : const Icon(Icons.view_in_ar, size: 18, color: Colors.white)),
-        title: Text(b.name, style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
-        subtitle: Text('ID: ${b.id}', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          IconButton(icon: const Icon(Icons.remove_circle_outline, size: 20, color: LegoApp.legoRed), onPressed: () => _updateQty(b, -1)),
-          Text('${b.quantity}', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800)),
-          IconButton(icon: const Icon(Icons.add_circle_outline, size: 20, color: LegoApp.legoBlue), onPressed: () => _updateQty(b, 1)),
-        ]),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: LegoApp.legoSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: LegoApp.legoBorder),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(radius: 20, backgroundColor: b.color,
+            child: b.color == Colors.white || b.color == Colors.yellow
+                ? Icon(Icons.view_in_ar, size: 18, color: Colors.grey[700])
+                : const Icon(Icons.view_in_ar, size: 18, color: Colors.white)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(b.name, style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+                Text('ID: ${b.id}', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+              ],
+            ),
+          ),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(icon: const Icon(Icons.remove_circle_outline, size: 20, color: LegoApp.legoRed), onPressed: () => _updateQty(b, -1)),
+            Text('${b.quantity}', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800)),
+            IconButton(icon: const Icon(Icons.add_circle_outline, size: 20, color: LegoApp.legoRed), onPressed: () => _updateQty(b, 1)),
+          ]),
+        ],
       ),
     );
   }
@@ -2363,7 +2719,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Widget _stat(String label, String value, IconData icon) => Column(children: [
         Icon(icon, color: LegoApp.legoBlue, size: 24),
         const SizedBox(height: 4),
-        Text(value, style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+        Text(value, style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
         Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[500])),
       ]);
 }
@@ -2381,6 +2737,7 @@ class RecommendationsScreen extends StatefulWidget {
 class _RecommendationsScreenState extends State<RecommendationsScreen> {
   List<LegoSet> _sets = [];
   bool _loading = true;
+  int _inventorySize = -1; // -1 = not yet loaded
 
   @override
   void initState() {
@@ -2393,14 +2750,28 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
     try {
       final res = await ApiService.getRecommendations();
       final recs = (res['recommendations'] as List?) ?? [];
-      setState(() => _sets = recs
-          .map((d) => LegoSet(
-                name: d['name'] ?? '',
-                completion: d['completion_percentage'] ?? 0,
-                missingPieces: d['missing_pieces'] ?? 0,
-                imageUrl: d['image_url'] ?? '',
-              ))
-          .toList());
+      final invSize = res['inventory_size'] as int? ?? -1;
+      setState(() {
+        _inventorySize = invSize;
+        _sets = recs.map((d) {
+          final rawMissing = d['missing_pieces'];
+          final List<Map<String, dynamic>> missingList = rawMissing is List
+              ? rawMissing.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+              : [];
+          return LegoSet(
+            name:               d['name'] ?? '',
+            theme:              d['theme'] ?? '',
+            completion:         ((d['completion_percentage'] ?? 0) as num).toInt(),
+            ownedPieces:        ((d['owned_pieces'] ?? 0) as num).toInt(),
+            totalPieces:        ((d['total_pieces'] ?? 0) as num).toInt(),
+            missingPieces:      ((d['missing_pieces_count'] ?? 0) as num).toInt(),
+            difficulty:         d['difficulty'] ?? 'intermediate',
+            estimatedBuildTime: d['estimated_build_time'] ?? '',
+            missingPiecesList:  missingList,
+            imageUrl:           d['image_url'] ?? '',
+          );
+        }).toList();
+      });
     } catch (_) {}
     setState(() => _loading = false);
   }
@@ -2413,12 +2784,36 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Buildable Sets', style: GoogleFonts.nunito(fontSize: 24, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+            Text('Buildable Sets',
+              style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
             IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
           ],
         ),
         Text('Based on your current inventory', style: TextStyle(color: Colors.grey[500])),
-        const SizedBox(height: 16),
+        // Banner shown when user has no inventory yet
+        if (!_loading && _inventorySize == 0) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: LegoApp.legoYellow.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: LegoApp.legoYellow.withValues(alpha: 0.4)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.info_outline, size: 16, color: LegoApp.legoDark),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Scan bricks to see your real completion %',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                    color: LegoApp.legoDark),
+                ),
+              ),
+            ]),
+          ),
+        ],
+        const SizedBox(height: 12),
         Expanded(
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
@@ -2431,21 +2826,28 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
                       itemCount: 3,
                       itemBuilder: (_, __) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Container(height: 120, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+                        child: Container(height: 140,
+                          decoration: BoxDecoration(color: Colors.white,
+                            borderRadius: BorderRadius.circular(16))),
                       ),
                     ),
                   )
                 : _sets.isEmpty
-                    ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.construction, size: 80, color: Colors.grey[300]),
-                        const SizedBox(height: 16),
-                        Text('No recommendations yet', style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.grey[500])),
-                      ]))
+                    ? Center(
+                        key: const ValueKey('no_recs'),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.construction, size: 80, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          Text('No recommendations yet',
+                            style: GoogleFonts.outfit(fontSize: 18,
+                              fontWeight: FontWeight.w700, color: Colors.grey[500])),
+                        ]),
+                      )
                     : ListView.builder(
-                        key: const ValueKey('rec_list'),
-                        itemCount: _sets.length,
-                        itemBuilder: (_, i) => _setCard(_sets[i]),
-                      ),
+                            key: const ValueKey('rec_list'),
+                            itemCount: _sets.length,
+                            itemBuilder: (_, i) => _setCard(_sets[i]),
+                          ),
           ),
         ),
       ]),
@@ -2454,53 +2856,135 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
 
   Widget _setCard(LegoSet s) {
     final pct = s.completion / 100;
-    final diffColor = s.completion > 70 ? Colors.green : s.completion > 40 ? Colors.orange : LegoApp.legoRed;
-    final diffLabel = s.completion > 70 ? 'Easy' : s.completion > 40 ? 'Medium' : 'Hard';
+    final diffColor = s.difficulty == 'beginner'
+        ? Colors.green
+        : s.difficulty == 'intermediate'
+            ? Colors.orange
+            : LegoApp.legoRed;
+    final diffLabel = s.difficulty == 'beginner'
+        ? 'Beginner'
+        : s.difficulty == 'intermediate'
+            ? 'Intermediate'
+            : 'Advanced';
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Header row: progress ring + name/theme ──
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             SizedBox(
-              width: 56, height: 56,
+              width: 60, height: 60,
               child: Stack(alignment: Alignment.center, children: [
-                CircularProgressIndicator(value: pct, strokeWidth: 5, backgroundColor: Colors.grey.shade200, color: diffColor),
-                Text('${s.completion}%', style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w800, color: diffColor)),
+                CircularProgressIndicator(
+                  value: pct, strokeWidth: 5,
+                  backgroundColor: Colors.grey.shade200,
+                  color: diffColor,
+                ),
+                Text('${s.completion}%',
+                  style: GoogleFonts.outfit(fontSize: 11,
+                    fontWeight: FontWeight.w800, color: diffColor)),
               ]),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Expanded(child: Text(s.name, style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700))),
+                  Expanded(child: Text(s.name,
+                    style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700))),
                   Chip(
-                    label: Text(diffLabel, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                    label: Text(diffLabel,
+                      style: const TextStyle(color: Colors.white, fontSize: 11,
+                        fontWeight: FontWeight.w600)),
                     backgroundColor: diffColor,
                     padding: EdgeInsets.zero,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ]),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(value: pct, backgroundColor: Colors.grey[200], color: diffColor, minHeight: 6),
-                ),
-                const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  if (s.missingPieces > 0)
-                    Chip(
-                      avatar: const Icon(Icons.warning_amber, size: 14, color: LegoApp.legoRed),
-                      label: Text('${s.missingPieces} missing', style: const TextStyle(fontSize: 11)),
-                      padding: EdgeInsets.zero,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                ]),
+                if (s.theme.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(s.theme,
+                    style: const TextStyle(fontSize: 12, color: LegoApp.legoMuted)),
+                ],
               ]),
             ),
+          ]),
+          const SizedBox(height: 12),
+          // ── Progress bar ──
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct, backgroundColor: Colors.grey[200],
+              color: diffColor, minHeight: 6),
+          ),
+          const SizedBox(height: 8),
+          // ── Piece count row ──
+          Row(children: [
+            Text('${s.completion}% complete',
+              style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700, color: diffColor)),
+            const Spacer(),
+            Text('${s.ownedPieces} of ${s.totalPieces} pieces',
+              style: const TextStyle(fontSize: 12, color: LegoApp.legoMuted)),
+          ]),
+          if (s.estimatedBuildTime.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(children: [
+              const Icon(Icons.schedule, size: 12, color: LegoApp.legoMuted),
+              const SizedBox(width: 4),
+              Text(s.estimatedBuildTime,
+                style: const TextStyle(fontSize: 11, color: LegoApp.legoMuted)),
+            ]),
           ],
-        ),
+          const SizedBox(height: 8),
+          // ── Missing pieces section ──
+          if (s.missingPiecesList.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FFF0),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(children: const [
+                Icon(Icons.check_circle, size: 16, color: Color(0xFF2a8a00)),
+                SizedBox(width: 6),
+                Text('You can build this set!',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                    color: Color(0xFF2a8a00))),
+              ]),
+            )
+          else
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: Row(children: [
+                  const Icon(Icons.warning_amber, size: 14, color: LegoApp.legoRed),
+                  const SizedBox(width: 6),
+                  Text('${s.missingPieces} missing piece${s.missingPieces == 1 ? '' : 's'}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                      color: LegoApp.legoRed)),
+                ]),
+                children: s.missingPiecesList.map((p) => Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: LegoApp.legoBg,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text('${p['brick_id']} · ${p['color']}',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                    Text('need ${p['needed']}  (have ${p['have']})',
+                      style: const TextStyle(fontSize: 11, color: LegoApp.legoMuted)),
+                  ]),
+                )).toList(),
+              ),
+            ),
+        ]),
       ),
     );
   }
@@ -2568,116 +3052,125 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final backendOk = _backendStatus.toLowerCase().contains('healthy') || _backendStatus.toLowerCase() == 'ok';
     final pineconeOk = _pineconeStatus.toLowerCase().contains('connected') || _pineconeStatus.toLowerCase() == 'ok' || _pineconeStatus.toLowerCase().contains('healthy');
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: Column(children: [
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: LegoApp.legoYellow,
-                child: Text(_initials(username), style: GoogleFonts.nunito(fontSize: 28, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
-              ),
-              const SizedBox(height: 14),
-              Text(username, style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
-              if (email.isNotEmpty) Text(email, style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _animatedStatCard('Scans', totalScans, Icons.qr_code_scanner),
-                  _animatedStatCard('Bricks', totalInv, Icons.view_in_ar),
-                  _animatedStatCard('Favorites', totalFav, Icons.favorite),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Wrap(spacing: 8, children: [
-                Chip(
-                  avatar: Icon(Icons.dns, size: 16, color: backendOk ? Colors.green : LegoApp.legoRed),
-                  label: Text('Backend: ${backendOk ? "Connected" : _backendStatus}', style: TextStyle(fontSize: 11, color: backendOk ? Colors.green.shade800 : LegoApp.legoRed)),
-                  backgroundColor: backendOk ? Colors.green.shade50 : Colors.red.shade50,
-                  padding: EdgeInsets.zero,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                Chip(
-                  avatar: Icon(Icons.cloud, size: 16, color: pineconeOk ? Colors.green : LegoApp.legoRed),
-                  label: Text('Pinecone: ${pineconeOk ? "Connected" : _pineconeStatus}', style: TextStyle(fontSize: 11, color: pineconeOk ? Colors.green.shade800 : LegoApp.legoRed)),
-                  backgroundColor: pineconeOk ? Colors.green.shade50 : Colors.red.shade50,
-                  padding: EdgeInsets.zero,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ]),
-            ]),
+    return Column(children: [
+        // ── DARK PROFILE HEADER ──
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 20,
+            bottom: 24,
+            left: 20,
+            right: 20,
           ),
+          decoration: const BoxDecoration(
+            color: LegoApp.legoDark,
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(28),
+              bottomRight: Radius.circular(28),
+            ),
+          ),
+          child: Column(children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: LegoApp.legoYellow,
+              child: Text(_initials(username), style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800, color: LegoApp.legoDark)),
+            ),
+            const SizedBox(height: 14),
+            Text(username, style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
+            if (email.isNotEmpty) Text(email, style: const TextStyle(fontSize: 14, color: Colors.white70)),
+            const SizedBox(height: 20),
+            // Stats row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _animatedStatCard('Scans', totalScans, Icons.qr_code_scanner),
+                _animatedStatCard('Bricks', totalInv, Icons.view_in_ar),
+                _animatedStatCard('Favorites', totalFav, Icons.favorite),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(spacing: 8, children: [
+              Chip(
+                avatar: Icon(Icons.dns, size: 16, color: backendOk ? Colors.green : LegoApp.legoRed),
+                label: Text('Backend: ${backendOk ? "Connected" : _backendStatus}', style: TextStyle(fontSize: 11, color: backendOk ? Colors.green.shade800 : LegoApp.legoRed)),
+                backgroundColor: backendOk ? Colors.green.shade50 : Colors.red.shade50,
+                padding: EdgeInsets.zero,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              Chip(
+                avatar: Icon(Icons.cloud, size: 16, color: pineconeOk ? Colors.green : LegoApp.legoRed),
+                label: Text('Pinecone: ${pineconeOk ? "Connected" : _pineconeStatus}', style: TextStyle(fontSize: 11, color: pineconeOk ? Colors.green.shade800 : LegoApp.legoRed)),
+                backgroundColor: pineconeOk ? Colors.green.shade50 : Colors.red.shade50,
+                padding: EdgeInsets.zero,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ]),
+          ]),
         ),
         const SizedBox(height: 16),
         Expanded(
-          child: ListView(children: [
-            _profileTile(Icons.history, 'Scan History', () {
-              // Navigate to scan history
-            }),
-            _profileTile(Icons.favorite, 'Favorite Sets', () {
-              // Navigate to favorites
-            }),
-            _profileTile(Icons.settings, 'Settings', () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            }),
-            _profileTile(Icons.help, 'Help & Support', () {
-              // Navigate to help
-            }),
-            _profileTile(Icons.info, 'About', () {
-              // Navigate to about
-            }),
-            _profileTile(Icons.logout, 'Logout', _logout, color: LegoApp.legoRed),
-          ]),
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              _profileTile(Icons.history, 'Scan History', () {}),
+              _profileTile(Icons.favorite, 'Favorite Sets', () {}),
+              _profileTile(Icons.settings, 'Settings', () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+              }),
+              _profileTile(Icons.help, 'Help & Support', () {}),
+              _profileTile(Icons.info, 'About', () {}),
+              _profileTile(Icons.logout, 'Logout', _logout, color: LegoApp.legoRed),
+            ],
+          ),
         ),
-      ]),
-    );
+      ]);
   }
 
   Widget _animatedStatCard(String label, int value, IconData icon) {
     return SizedBox(
       width: 100,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          child: Column(children: [
-            Icon(icon, color: LegoApp.legoBlue, size: 22),
-            const SizedBox(height: 6),
-            TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: value.toDouble()),
-              duration: const Duration(milliseconds: 800),
-              curve: Curves.easeOut,
-              builder: (_, v, __) => Text(
-                '${v.toInt()}',
-                style: GoogleFonts.nunito(fontSize: 20, fontWeight: FontWeight.w800, color: LegoApp.legoDark),
-              ),
-            ),
-            Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-          ]),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
         ),
+        child: Column(children: [
+          Icon(icon, color: LegoApp.legoYellow, size: 22),
+          const SizedBox(height: 6),
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: value.toDouble()),
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOut,
+            builder: (_, v, __) => Text(
+              '${v.toInt()}',
+              style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
+            ),
+          ),
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.white70)),
+        ]),
       ),
     );
   }
 
   Widget _profileTile(IconData icon, String title, VoidCallback onTap, {Color? color}) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: LegoApp.legoSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: LegoApp.legoBorder),
+      ),
       child: ListTile(
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: (color ?? LegoApp.legoBlue).withValues(alpha: 0.1),
+            color: (color ?? LegoApp.legoRed).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, color: color ?? LegoApp.legoBlue, size: 20),
+          child: Icon(icon, color: color ?? LegoApp.legoRed, size: 20),
         ),
-        title: Text(title, style: GoogleFonts.nunito(fontWeight: FontWeight.w600, color: color)),
+        title: Text(title, style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: color)),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: onTap,
       ),
@@ -2823,7 +3316,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Settings', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
+        title: Text('Settings', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -3012,7 +3505,7 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Change Password', style: GoogleFonts.nunito(fontSize: 20, fontWeight: FontWeight.w700)),
+          Text('Change Password', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
           TextField(
             controller: _oldPasswordController,
@@ -3196,7 +3689,7 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Scan History', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
+        title: Text('Scan History', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -3283,7 +3776,7 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
                                 backgroundColor: LegoApp.legoYellow,
                                 child: const Icon(Icons.document_scanner, color: Colors.black),
                               ),
-                              title: Text(formattedDate, style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16)),
+                              title: Text(formattedDate, style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 16)),
                               subtitle: Text('$totalBricks bricks • $uniqueTypes types', style: TextStyle(color: Colors.grey.shade600)),
                               trailing: Chip(
                                 label: Text('$totalBricks bricks', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
@@ -3303,23 +3796,42 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
                                     final confidence = (brick['confidence'] ?? 0) as num;
                                     final count = brick['count'] ?? brick['quantity'] ?? 1;
                                     final color = brick['color'] ?? 'Unknown';
+                                    final brickColor = _colorFromName(color);
 
-                                    return ListTile(
-                                      leading: Container(
-                                        width: 16,
-                                        height: 16,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: _colorFromName(color),
-                                          border: Border.all(
-                                            color: Colors.grey.shade400,
-                                            width: 1.0,
-                                          ),
-                                        ),
+                                    return Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: LegoApp.legoBorder),
                                       ),
-                                      title: Text(brickName, style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
-                                      subtitle: Text('Confidence: ${(confidence * 100).toStringAsFixed(1)}%'),
-                                      trailing: Text('x$count', style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 16)),
+                                      child: Row(children: [
+                                        Container(
+                                          width: 32, height: 32,
+                                          decoration: BoxDecoration(
+                                            color: brickColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Center(child: Container(
+                                            width: 16, height: 16,
+                                            decoration: BoxDecoration(
+                                              color: brickColor,
+                                              borderRadius: BorderRadius.circular(3),
+                                            ),
+                                          )),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(brickName, style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 13)),
+                                            Text('${(confidence * 100).toStringAsFixed(1)}% confidence',
+                                              style: const TextStyle(fontSize: 11, color: LegoApp.legoMuted)),
+                                          ],
+                                        )),
+                                        LegoBadge('×$count'),
+                                      ]),
                                     );
                                   }),
                                 if (scanResults.isNotEmpty)
@@ -3372,14 +3884,26 @@ class LegoBrick {
 
 class LegoSet {
   final String name;
+  final String theme;
   final int completion;
+  final int ownedPieces;
+  final int totalPieces;
   final int missingPieces;
+  final String difficulty;
+  final String estimatedBuildTime;
+  final List<Map<String, dynamic>> missingPiecesList;
   final String imageUrl;
 
   LegoSet({
     required this.name,
+    required this.theme,
     required this.completion,
+    required this.ownedPieces,
+    required this.totalPieces,
     required this.missingPieces,
+    required this.difficulty,
+    required this.estimatedBuildTime,
+    required this.missingPiecesList,
     required this.imageUrl,
   });
 }
