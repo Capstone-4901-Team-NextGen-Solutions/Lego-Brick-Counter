@@ -17,13 +17,9 @@ import base64
 import io
 import numpy as np
 
-#email verification imports
-import secrets
-from email_service import email_service
-
 from brick_detector import BrickDetector
 from pinecone_service import PineconeService
-from color_detector import HSVColorClassifier
+from color_detector import LegoColorClassifier
 
 
 # Try to import Azure detector (optional)
@@ -33,9 +29,30 @@ try:
 except ImportError:
     AZURE_AVAILABLE = False
 
+# Try to import YOLOv8 detector (optional)
+try:
+    from yolo_detector import YOLODetector
+    yolo_detector = YOLODetector(model_path='models/best.onnx', classes_path='models/classes.txt')
+    logger = logging.getLogger(__name__)
+    logger.info("✅ YOLOv8 detector initialized")
+except Exception as e:
+    yolo_detector = None
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ YOLOv8 detector not available: {e}")
+
 # Load environment variables FIRST
 load_dotenv()
 
+# Try to import Gemini detector (optional)
+try:
+    from gemini_detector import GeminiDetector
+    gemini_detector = GeminiDetector()
+    logger = logging.getLogger(__name__)
+    logger.info(f"[Startup] Gemini detector: {'ready' if gemini_detector.loaded else 'not configured'}")
+except Exception as e:
+    gemini_detector = None
+    logger = logging.getLogger(__name__)
+    logger.warning(f"[Startup] Gemini detector failed to initialize: {e}")
 
 # Create Flask app
 app = Flask(__name__)
@@ -61,13 +78,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin
 import jwt
-
-# Fix Render's postgres:// prefix — SQLAlchemy requires postgresql://
-_database_url = os.getenv('DATABASE_URL', 'sqlite:///lego_app.db')
-if _database_url.startswith('postgres://'):
-    _database_url = _database_url.replace('postgres://', 'postgresql://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = _database_url 
-
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
@@ -102,12 +112,6 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
-
-    #Email verification variables
-    email_verified      = db.Column(db.Boolean, default=False)
-    verification_token  = db.Column(db.String(100), unique=True, nullable=True)
-    reset_token         = db.Column(db.String(100), unique=True, nullable=True)
-    reset_token_expires = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     scan_history = db.relationship('ScanHistory', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -126,17 +130,6 @@ class User(UserMixin, db.Model):
             app.config['JWT_SECRET_KEY'],
             algorithm='HS256'
         )
-
-    def generate_verification_token(self):
-        """Generate a unique email verification token and save it to the DB."""
-        self.verification_token = secrets.token_urlsafe(32)
-        return self.verification_token
-        
-    def generate_reset_token(self):
-        """Generate a password reset token valid for 1 hour."""
-        self.reset_token = secrets.token_urlsafe(32)
-        self.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
-        return self.reset_token
     
     @staticmethod
     def verify_auth_token(token):
@@ -232,17 +225,18 @@ if AZURE_AVAILABLE:
 if detector is None:
     try:
         detector = BrickDetector(
-            model_path="best.onnx",
+            model_path="models/best.onnx",
             conf_threshold=0.12,
             iou_threshold=0.45,
         )
         detector_type = "ONNX"
         logger.info("ONNX Brick detector ready")
     except Exception as exc:
-        logger.warning(f"ONNX Detector unavailable ({exc}) - place best.onnx in backend/")
+        logger.warning(f"ONNX Detector unavailable ({exc}) - place best.onnx in backend/models/")
 
 # Initialize color classifier
-color_classifier = HSVColorClassifier()
+color_classifier = LegoColorClassifier()
+color_classifier.debug = True  # TODO: remove before final demo
 logger.info("Color classifier initialized")
 
 # Pinecone
@@ -617,9 +611,6 @@ def handle_errors(f):
             return jsonify({"success": False, "error": "Internal server error", "details": str(exc)}), 500
     return wrapper
 
-
-import cloudinary
-import cloudinary.uploader
 
 import cloudinary
 import cloudinary.uploader
@@ -1218,6 +1209,226 @@ def upload_image(current_user):
         "timestamp": _now_iso(),
     })
 
+@app.route("/api/detect/onnx", methods=["POST"])
+@token_required
+def detect_with_onnx(current_user):
+    """Detect bricks using local ONNX YOLOv8 model"""
+    try:
+        # Check detector is loaded
+        if detector is None:
+            return jsonify({
+                'success': False,
+                'error': 'ONNX model not loaded. Check that best.onnx exists in the backend/models folder.',
+                'detector_used': 'ONNX YOLOv8'
+            }), 503
+
+        # Get uploaded file — same pattern as /api/upload
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+        if not _allowed(file.filename):
+            return jsonify({'success': False, 'error': 'File type not allowed'}), 400
+
+        # Save file
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        filename = f"onnx_scan_{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+        logger.info(f"[ONNX] File saved: {filepath}")
+
+        # Run ONNX detection
+        logger.info(f"[ONNX] Running detection on: {filepath}")
+        raw_results = detector.detect_bricks(filepath)
+        logger.info(f"[ONNX DEBUG] raw_results type: {type(raw_results)}")
+        logger.info(f"[ONNX DEBUG] raw_results count: {len(raw_results)}")
+        if raw_results:
+            logger.info(f"[ONNX DEBUG] first item type: {type(raw_results[0])}")
+            logger.info(f"[ONNX DEBUG] first item: {raw_results[0]}")
+
+        # Get image dimensions for bbox normalization
+        from PIL import Image as PILImage
+        img = PILImage.open(filepath)
+        img_w, img_h = img.size
+        logger.info(f"[ONNX] Image dimensions: {img_w}x{img_h}")
+
+        # Parse results - detect_bricks returns list of dicts with:
+        # {'id': str, 'name': str, 'color': str, 'quantity': int, 'confidence': float, 'bbox': [x, y, w, h]}
+        results = []
+        for r in raw_results:
+            # Extract bbox in [x, y, width, height] pixel format
+            raw_bbox = r.get('bbox', [])
+            
+            # Normalize bbox for color classifier (expects 0-1 range with left, top, width, height)
+            if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
+                normalized_bbox = {
+                    'left': raw_bbox[0] / img_w,
+                    'top': raw_bbox[1] / img_h,
+                    'width': raw_bbox[2] / img_w,
+                    'height': raw_bbox[3] / img_h,
+                }
+                logger.info(f"[ONNX] Normalized bbox: {normalized_bbox}")
+                color = color_classifier.detect_color_from_bbox(filepath, normalized_bbox)
+            else:
+                logger.warning(f"[ONNX] Invalid bbox format: {raw_bbox}, using full image for color")
+                color = color_classifier.detect_color_from_image(filepath)
+
+            results.append({
+                'brick_name': r.get('name', 'Unknown'),
+                'brick_id': r.get('id', '0000'),
+                'confidence': float(r.get('confidence', 0)),
+                'color': color,
+                'count': int(r.get('quantity', 1)),
+                'quantity': int(r.get('quantity', 1)),
+                'bounding_box': {
+                    'left': raw_bbox[0] / img_w if len(raw_bbox) >= 4 else 0,
+                    'top': raw_bbox[1] / img_h if len(raw_bbox) >= 4 else 0,
+                    'width': raw_bbox[2] / img_w if len(raw_bbox) >= 4 else 0,
+                    'height': raw_bbox[3] / img_h if len(raw_bbox) >= 4 else 0,
+                }
+            })
+            logger.info(f"[ONNX] Processed brick: {results[-1]['brick_name']} - {results[-1]['color']}")
+
+        total_bricks = sum(r['count'] for r in results)
+        unique_types = len(set(r['brick_name'] for r in results))
+
+        # Save to scan history — same pattern as /api/upload
+        try:
+            new_scan = ScanHistory(
+                user_id=current_user.id,
+                image_path=filepath,
+                total_bricks=total_bricks,
+                unique_types=unique_types,
+                scan_results=results
+            )
+            db.session.add(new_scan)
+            db.session.commit()
+            logger.info(f"[ONNX] Scan saved to history, id={new_scan.id}")
+        except Exception as db_err:
+            logger.warning(f"[ONNX] Could not save scan history: {db_err}")
+            db.session.rollback()
+
+        return jsonify({
+            'success': True,
+            'total_bricks': total_bricks,
+            'unique_types': unique_types,
+            'detector_used': 'ONNX YOLOv8',
+            'results': results,
+            'timestamp': _now_iso(),
+        })
+
+    except Exception as e:
+        logger.error(f"[ONNX] Detection error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': f'ONNX detection failed: {str(e)}',
+            'detector_used': 'ONNX YOLOv8'
+        }), 500
+
+
+@app.route('/api/detect/gemini', methods=['POST'])
+@token_required
+def detect_with_gemini(current_user):
+    """Detect LEGO bricks using Google Gemini Flash multimodal model"""
+    try:
+        # Check detector is ready
+        if gemini_detector is None or not gemini_detector.loaded:
+            return jsonify({
+                'success': False,
+                'error': 'Gemini detector not configured. Add GEMINI_API_KEY to .env file.',
+                'detector_used': 'Gemini Flash'
+            }), 503
+
+        # Get uploaded file — same pattern as /api/upload
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+        if not _allowed(file.filename):
+            return jsonify({'success': False, 'error': 'File type not allowed'}), 400
+
+        # Save file
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        filename = f"gemini_scan_{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+        logger.info(f'[Gemini] File saved: {filepath}')
+
+        # Run Gemini detection
+        raw_results = gemini_detector.detect_bricks(filepath)
+        logger.info(f'[Gemini] Raw results: {raw_results}')
+
+        # Color detection — Gemini already returns color names
+        # but run through our classifier too for consistency
+        results = []
+        for r in raw_results:
+            gemini_color = r.get('color', 'Unknown')
+            # Use Gemini's color if it returned one, otherwise use our classifier
+            if gemini_color and gemini_color != 'Unknown':
+                color = gemini_color
+            else:
+                color = color_classifier.detect_color_from_image(filepath)
+
+            results.append({
+                'brick_name':   r.get('brick_name', 'Unknown'),
+                'color':        color,
+                'count':        int(r.get('count', 1)),
+                'confidence':   float(r.get('confidence', 0.90)),
+                'bounding_box': {}
+            })
+
+        total_bricks = sum(r['count'] for r in results)
+        unique_types = len(set(r['brick_name'] for r in results))
+
+        # Save to scan history
+        try:
+            import json
+            new_scan = ScanHistory(
+                user_id=current_user.id,
+                image_path=filename,
+                total_bricks=total_bricks,
+                unique_types=unique_types,
+                scan_results=json.dumps(results)
+            )
+            db.session.add(new_scan)
+            db.session.commit()
+            logger.info(f'[Gemini] Scan saved to history id={new_scan.id}')
+        except Exception as db_err:
+            logger.warning(f'[Gemini] Could not save scan history: {db_err}')
+            db.session.rollback()
+
+        return jsonify({
+            'success':       True,
+            'total_bricks':  total_bricks,
+            'unique_types':  unique_types,
+            'detector_used': 'Gemini Flash',
+            'results':       results
+        })
+
+    except Exception as e:
+        logger.error(f'[Gemini] Detection error: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        
+        error_msg = str(e)
+        # Give user-friendly message for quota errors
+        if '429' in error_msg or 'quota' in error_msg.lower() or 'RESOURCE_EXHAUSTED' in error_msg:
+            friendly = 'Gemini free tier quota exceeded for all available models. Try again in a few minutes or create a new Google Cloud project at console.cloud.google.com/projectcreate and generate a fresh API key.'
+        else:
+            friendly = f'Gemini detection failed: {error_msg}'
+        
+        return jsonify({
+            'success': False,
+            'error': friendly,
+            'detector_used': 'Gemini Flash'
+        }), 500
+
 # ---------------------------------------------------------------------------
 # ENDPOINTS 
 # ---------------------------------------------------------------------------
@@ -1374,6 +1585,51 @@ def version():
         "pinecone": "connected" if pinecone_svc.enabled else "not_configured",
     })
 
+# ---------------------------------------------------------------------------
+# YOLOv8 Live Detection Endpoints
+# ---------------------------------------------------------------------------
+
+@app.route('/api/detect/yolo', methods=['POST'])
+@token_required
+def detect_bricks_yolo(current_user):
+    """Detect LEGO bricks using YOLOv8 ONNX model — for live detection."""
+    if yolo_detector is None:
+        return jsonify({"error": "YOLOv8 model not loaded"}), 503
+    
+    if 'image' not in request.files:
+        # Also accept raw bytes in request body for live camera frames
+        image_bytes = request.get_data()
+        if not image_bytes:
+            return jsonify({"error": "No image provided"}), 400
+    else:
+        image_bytes = request.files['image'].read()
+    
+    try:
+        results = yolo_detector.detect(image_bytes)
+        return jsonify({
+            "success": True,
+            "model": "yolov8s-lego-v1",
+            "total_bricks": results["total_bricks"],
+            "brick_counts": results["brick_counts"],
+            "detections": results["detections"]
+        })
+    except Exception as e:
+        logger.error(f"YOLOv8 detection error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/detect/yolo/health', methods=['GET'])
+def yolo_health():
+    """Check if YOLOv8 model is loaded and ready."""
+    return jsonify({
+        "available": yolo_detector is not None,
+        "model": "yolov8s-lego-v1",
+        "classes": yolo_detector.class_names if yolo_detector else []
+    })
+
+# ---------------------------------------------------------------------------
+# Recommendations Routes
+# ---------------------------------------------------------------------------
 #recommendations_routes import
 from recommendations_routes import register_recommendations
 register_recommendations(app, InventoryItem, pinecone_svc, token_required, _now_iso)
