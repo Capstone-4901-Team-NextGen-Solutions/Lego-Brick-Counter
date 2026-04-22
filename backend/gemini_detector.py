@@ -19,8 +19,9 @@ class GeminiDetector:
         self.api_key = os.getenv('GEMINI_API_KEY')
         self.api_base = 'https://generativelanguage.googleapis.com/v1beta/models'
         self.models_to_try = [
-            'gemini-2.5-flash',
-            'gemini-2.5-pro',
+            'gemini-2.0-flash',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
         ]
         self.loaded = self.api_key is not None
         if not self.loaded:
@@ -48,7 +49,7 @@ class GeminiDetector:
                     logger.info(f'[Gemini] Working model found: {model}')
                     return model
                 else:
-                    logger.warning(f'[Gemini] Model {model} returned {r.status_code}')
+                    logger.warning(f'[Gemini] Model {model} returned {r.status_code}: {r.text[:200]}')
             except Exception as e:
                 logger.warning(f'[Gemini] Model {model} error: {e}')
         return None
