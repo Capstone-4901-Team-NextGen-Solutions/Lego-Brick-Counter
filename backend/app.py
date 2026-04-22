@@ -621,21 +621,65 @@ def handle_errors(f):
 import cloudinary
 import cloudinary.uploader
 
-cloudinary.config(
-    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
-    api_key=os.getenv('CLOUDINARY_API_KEY'),
-    api_secret=os.getenv('CLOUDINARY_API_SECRET'),
-)
-
+import cloudinary
+import cloudinary.uploader
+ 
+# Only configure Cloudinary if all three credentials are present and non-placeholder
+_cloudinary_enabled = all([
+    os.getenv('CLOUDINARY_CLOUD_NAME'),
+    os.getenv('CLOUDINARY_API_KEY'),
+    os.getenv('CLOUDINARY_API_SECRET'),
+    os.getenv('CLOUDINARY_CLOUD_NAME') not in ('your_cloud_name', ''),
+    os.getenv('CLOUDINARY_API_KEY') not in ('your_api_key', ''),
+    os.getenv('CLOUDINARY_API_SECRET') not in ('your_api_secret', ''),
+])
+ 
+if _cloudinary_enabled:
+    cloudinary.config(
+        cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.getenv('CLOUDINARY_API_KEY'),
+        api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+    )
+    logger.info("Cloudinary configured — uploads will be stored in the cloud")
+else:
+    logger.info("Cloudinary not configured — uploads will be saved locally to uploads/")
+ 
+ 
 def _save_upload(file=None, base64_data=None) -> str:
-    """Upload image to Cloudinary and return the public URL."""
-    if file is not None:
-        result = cloudinary.uploader.upload(file)
-    else:
-        if ',' in base64_data:
-            base64_data = base64_data.split(',', 1)[1]
-        result = cloudinary.uploader.upload(f"data:image/jpeg;base64,{base64_data}")
-    return result['secure_url']
+    """
+    Save an uploaded image and return a path/URL that can be passed to
+    the detector.
+ 
+    Strategy:
+      1. If Cloudinary credentials are configured, upload to Cloudinary and
+         return the secure URL. The detector will download it for analysis.
+      2. Otherwise, save to the local uploads/ folder and return the filepath.
+         This is the default for local development.
+    """
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+ 
+    if _cloudinary_enabled:
+        # ── Cloudinary path ───────────────────────────────────────────────────
+        try:
+            if file is not None:
+                result = cloudinary.uploader.upload(
+                    file,
+                    folder="lego_scans",
+                    public_id=f"lego_scan_{ts}",
+                )
+            else:
+                if "," in base64_data:
+                    base64_data = base64_data.split(",", 1)[1]
+                result = cloudinary.uploader.upload(
+                    f"data:image/jpeg;base64,{base64_data}",
+                    folder="lego_scans",
+                    public_id=f"lego_scan_{ts}",
+                )
+            url = result["secure_url"]
+            logger.info(f"Uploaded to Cloudinary: {url}")
+            return url
+        except Exception as e:
+            logger.error(f"Cloudinary upload failed: {e} — falling back to local storage")
 
 # ---------------------------------------------------------------------------
 # AUTHENTICATION ENDPOINTS
