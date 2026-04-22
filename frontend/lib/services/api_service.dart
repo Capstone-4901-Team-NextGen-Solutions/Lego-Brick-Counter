@@ -174,13 +174,6 @@ class ApiService {
   }) async => _authRequest('DELETE', '/inventory/$brickId?color=$color');
 
   // -------------------------------------------------------------------
-  // Scan history
-  // -------------------------------------------------------------------
-  
-  static Future<Map<String, dynamic>> getScanHistory({int limit = 20}) async =>
-      _authRequest('GET', '/scan-history?limit=$limit');
-
-  // -------------------------------------------------------------------
   // Private helpers 
   // -------------------------------------------------------------------
 
@@ -402,4 +395,317 @@ class ApiService {
   /// Get Pinecone index statistics.
   static Future<Map<String, dynamic>> getPineconeStats() async =>
       _safeGet('/pinecone/stats');
+
+  /// Get user's scan history with detection results.
+  static Future<List<dynamic>> getScanHistory() async {
+    try {
+      final result = await _authRequest('GET', '/scan-history');
+      if (result['success'] == true && result['scans'] != null) {
+        final scans = result['scans'];
+        if (scans is List) {
+          return List<dynamic>.from(scans);
+        }
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Failed to load scan history: $e');
+    }
+  }
+
+  /// Clear all scan history for current user
+  static Future<void> clearScanHistory() async {
+    final result = await _authRequest('DELETE', '/scan-history');
+    if (result['success'] != true) {
+      throw Exception(result['error'] ?? 'Failed to clear scan history');
+    }
+  }
+
+  /// Export inventory as JSON string
+  static Future<String> exportInventory() async {
+    final result = await _authRequest('GET', '/inventory');
+    if (result['success'] == true && result['inventory'] != null) {
+      return json.encode(result['inventory']);
+    }
+    throw Exception('Failed to export inventory');
+  }
+
+  /// Get dashboard data by making parallel API calls
+  static Future<Map<String, dynamic>> getDashboardData() async {
+    try {
+      // Make 3 parallel API calls
+      final results = await Future.wait([
+        _authRequest('GET', '/inventory'),
+        _authRequest('GET', '/scan-history'),
+        _authRequest('GET', '/recommendations'),
+      ]);
+
+      final inventoryResult = results[0];
+      final scanHistoryResult = results[1];
+      final recommendationsResult = results[2];
+
+      // Process inventory data
+      int totalBricks = 0;
+      int uniqueTypes = 0;
+      if (inventoryResult['success'] == true && inventoryResult['inventory'] != null) {
+        final inventory = inventoryResult['inventory'] as List;
+        uniqueTypes = inventory.length;
+        for (var item in inventory) {
+          totalBricks += (item['quantity'] ?? 0) as int;
+        }
+      }
+
+      // Process scan history data
+      int totalScans = 0;
+      String? lastScanDate;
+      if (scanHistoryResult['success'] == true && scanHistoryResult['scans'] != null) {
+        final scans = scanHistoryResult['scans'] as List;
+        totalScans = scans.length;
+        if (scans.isNotEmpty) {
+          lastScanDate = scans[0]['date'] ?? scans[0]['scan_date'];
+        }
+      }
+
+      // Process recommendations data
+      int buildableSets = 0;
+      Map<String, dynamic>? topSet;
+      if (recommendationsResult['recommendations'] != null) {
+        final recommendations = recommendationsResult['recommendations'] as List;
+        for (var set in recommendations) {
+          final completion = set['completion_percentage'] ?? 0;
+          if (completion >= 50) {
+            buildableSets++;
+          }
+        }
+        if (recommendations.isNotEmpty) {
+          topSet = recommendations[0] as Map<String, dynamic>;
+        }
+      }
+
+      return {
+        'totalBricks': totalBricks,
+        'uniqueTypes': uniqueTypes,
+        'totalScans': totalScans,
+        'lastScanDate': lastScanDate,
+        'buildableSets': buildableSets,
+        'topSet': topSet,
+      };
+    } catch (e) {
+      // Return safe defaults if any call fails
+      return {
+        'totalBricks': 0,
+        'uniqueTypes': 0,
+        'totalScans': 0,
+        'lastScanDate': null,
+        'buildableSets': 0,
+        'topSet': null,
+      };
+    }
+  }
+
+  /// Send image bytes to YOLOv8 backend for live detection
+  static Future<Map<String, dynamic>> detectWithYolo(List<int> imageBytes) async {
+    final auth = AuthService();
+    
+    var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/yolo'));
+    request.headers.addAll(auth.authHeaders);
+    request.files.add(http.MultipartFile.fromBytes('image', imageBytes, filename: 'frame.jpg'));
+    
+    try {
+      var streamedResponse = await request.send().timeout(timeout);
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else if (response.statusCode == 401) {
+        await auth.logout();
+        throw Exception('Session expired');
+      } else {
+        throw Exception('YOLOv8 detection failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('YOLOv8 detection error: $e');
+    }
+  }
+
+  /// Detect bricks using ONNX YOLOv8 model
+  static Future<Map<String, dynamic>> detectWithOnnx(dynamic imageFile) async {
+    try {
+      if (kIsWeb) {
+        return await _detectWithOnnxWeb(imageFile);
+      } else {
+        return await _detectWithOnnxNative(imageFile);
+      }
+    } on TimeoutException {
+      return {
+        'success': false,
+        'error': 'Request timed out. Please try again.'
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to detect with ONNX: ${e.toString()}'
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> _detectWithOnnxWeb(XFile imageFile) async {
+    final auth = AuthService();
+    var request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/onnx'));
+    
+    // Add auth headers
+    request.headers.addAll(auth.authHeaders);
+    
+    final bytes = await imageFile.readAsBytes();
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: imageFile.name,
+    ));
+
+    var streamed = await request.send().timeout(timeout);
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode == 200) {
+      return json.decode(body);
+    }
+    if (streamed.statusCode == 401) {
+      await auth.logout();
+      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
+    }
+    if (streamed.statusCode == 503) {
+      return json.decode(body);
+    }
+    return {
+      'success': false,
+      'error': 'Server error (${streamed.statusCode}): $body'
+    };
+  }
+
+  static Future<Map<String, dynamic>> _detectWithOnnxNative(
+      XFile imageFile) async {
+    final auth = AuthService();
+    var request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/onnx'));
+    
+    // Add auth headers
+    request.headers.addAll(auth.authHeaders);
+    
+    final bytes = await imageFile.readAsBytes();
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: imageFile.name,
+    ));
+
+    var streamed = await request.send().timeout(timeout);
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode == 200) {
+      return json.decode(body);
+    }
+    if (streamed.statusCode == 401) {
+      await auth.logout();
+      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
+    }
+    if (streamed.statusCode == 503) {
+      return json.decode(body);
+    }
+    return {
+      'success': false,
+      'error': 'Server error (${streamed.statusCode}): $body'
+    };
+  }
+
+  /// Detect bricks using Google Gemini Flash model
+  static Future<Map<String, dynamic>> detectWithGemini(dynamic imageFile) async {
+    try {
+      if (kIsWeb) {
+        return await _detectWithGeminiWeb(imageFile);
+      } else {
+        return await _detectWithGeminiNative(imageFile);
+      }
+    } on TimeoutException {
+      return {
+        'success': false,
+        'error': 'Request timed out. Please try again.'
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to detect with Gemini: ${e.toString()}'
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> _detectWithGeminiWeb(XFile imageFile) async {
+    final auth = AuthService();
+    var request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/gemini'));
+    
+    // Add auth headers
+    request.headers.addAll(auth.authHeaders);
+    
+    final bytes = await imageFile.readAsBytes();
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: imageFile.name,
+    ));
+
+    var streamed = await request.send().timeout(timeout);
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode == 200) {
+      return json.decode(body);
+    }
+    if (streamed.statusCode == 401) {
+      await auth.logout();
+      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
+    }
+    if (streamed.statusCode == 503) {
+      return json.decode(body);
+    }
+    return {
+      'success': false,
+      'error': 'Server error (${streamed.statusCode}): $body'
+    };
+  }
+
+  static Future<Map<String, dynamic>> _detectWithGeminiNative(
+      XFile imageFile) async {
+    final auth = AuthService();
+    var request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/detect/gemini'));
+    
+    // Add auth headers
+    request.headers.addAll(auth.authHeaders);
+    
+    final bytes = await imageFile.readAsBytes();
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: imageFile.name,
+    ));
+
+    var streamed = await request.send().timeout(timeout);
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode == 200) {
+      return json.decode(body);
+    }
+    if (streamed.statusCode == 401) {
+      await auth.logout();
+      return {'success': false, 'error': 'Session expired', 'unauthorized': true};
+    }
+    if (streamed.statusCode == 503) {
+      return json.decode(body);
+    }
+    return {
+      'success': false,
+      'error': 'Server error (${streamed.statusCode}): $body'
+    };
+  }
 }
+
+
