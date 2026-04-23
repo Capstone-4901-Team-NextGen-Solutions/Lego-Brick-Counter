@@ -1,13 +1,12 @@
 // camera_screen.dart
 // Platform-aware camera capture:
-//   - Desktop web: shows a dialog with live camera preview via dart:html getUserMedia
-//   - Mobile web:  uses ImagePicker camera (Safari/Chrome handle it natively)
-//   - Native:      uses camera package with full-screen live preview
-//
-// pubspec.yaml: camera: ^0.11.0 and image_picker: ^1.0.0 (already present)
+//   - Desktop web: dialog with live getUserMedia preview + canvas capture
+//   - Mobile web:  ImagePicker camera (Safari/Chrome handle natively)
+//   - Native:      camera package full-screen preview
 
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
+import 'dart:convert' show base64Decode;
 import 'dart:typed_data';
 import 'dart:ui_web' as ui_web;
 
@@ -26,7 +25,6 @@ class CameraCapture {
   static Future<XFile?> capture(BuildContext context) async {
     if (kIsWeb) {
       if (_isMobileBrowser()) {
-        // Mobile browser (phone/tablet) — ImagePicker camera works natively
         try {
           return await ImagePicker().pickImage(
             source: ImageSource.camera,
@@ -36,7 +34,6 @@ class CameraCapture {
           return await ImagePicker().pickImage(source: ImageSource.gallery);
         }
       } else {
-        // Desktop browser — show a camera dialog using getUserMedia
         if (!context.mounted) return null;
         return await showDialog<XFile?>(
           context: context,
@@ -46,7 +43,7 @@ class CameraCapture {
       }
     }
 
-    // Native app
+    // Native
     List<CameraDescription> cameras;
     try {
       cameras = await availableCameras();
@@ -105,9 +102,11 @@ class _WebCameraDialogState extends State<_WebCameraDialog> {
   bool    _capturing = false;
   String? _error;
 
+  // Use a unique ID per instance so hot-reload doesn't conflict
+  final String _viewId = 'lego-cam-${DateTime.now().millisecondsSinceEpoch}';
+
   static const _yellow = Color(0xFFFFD700);
   static const _dark   = Color(0xFF1A1A2E);
-  static const _viewId = 'lego-camera-preview';
 
   @override
   void initState() {
@@ -122,69 +121,127 @@ class _WebCameraDialogState extends State<_WebCameraDialog> {
   }
 
   void _stopStream() {
-    _stream?.getTracks().forEach((t) => t.stop());
-    _video?.srcObject = null;
+    try {
+      _stream?.getTracks().forEach((t) => t.stop());
+    } catch (_) {}
+    try { _video?.srcObject = null; } catch (_) {}
   }
 
   Future<void> _startCamera() async {
     try {
       final stream = await html.window.navigator.mediaDevices!.getUserMedia({
-        'video': {'facingMode': 'environment', 'width': 1280, 'height': 720},
+        'video': {
+          'width':  {'ideal': 1280},
+          'height': {'ideal': 720},
+          'facingMode': 'user', // 'user' = front cam on laptops
+        },
         'audio': false,
       });
+
       _stream = stream;
-      _video  = html.VideoElement()
-        ..autoplay  = true
-        ..muted     = true
-        ..srcObject = stream
-        ..style.width    = '100%'
-        ..style.height   = '100%'
-        ..style.objectFit = 'cover';
+      final video = html.VideoElement()
+        ..autoplay   = true
+        ..muted      = true
+        ..srcObject  = stream
+        ..style.width     = '100%'
+        ..style.height    = '100%'
+        ..style.objectFit = 'cover'
+        ..style.borderRadius = '0';
 
+      _video = video;
+
+      // Register the HTML element as a platform view
       ui_web.platformViewRegistry.registerViewFactory(
-          _viewId, (int _) => _video!);
+        _viewId, (int _) => video,
+      );
 
-      await _video!.onLoadedData.first;
+      // Wait for the video to actually have data
+      await video.onLoadedMetadata.first;
+
+      // Small delay to ensure first frame is rendered
+      await Future.delayed(const Duration(milliseconds: 300));
+
       if (mounted) setState(() => _ready = true);
     } catch (e) {
-      if (mounted) setState(() =>
-        _error = 'Camera access denied.\n'
-                 'Allow camera in browser settings, or upload from gallery.');
+      if (mounted) {
+        setState(() => _error =
+          'Camera access denied or unavailable.\n\n'
+          'Fix: Click the camera icon in your browser address bar '
+          'and allow camera access, then try again.');
+      }
     }
+  }
+
+  /// Captures a frame from the video element using a canvas.
+  /// Returns the image bytes or null on failure.
+  Future<Uint8List?> _captureFrame() async {
+    final video = _video;
+    if (video == null) return null;
+
+    final w = video.videoWidth;
+    final h = video.videoHeight;
+    if (w == 0 || h == 0) return null;
+
+    final canvas = html.CanvasElement(width: w, height: h);
+    canvas.context2D.drawImage(video, 0, 0);
+
+    // toDataUrl is synchronous and works reliably in all desktop browsers.
+    // Dart's dart:html binding for toBlob only accepts 1 argument (no quality param).
+    final dataUrl = canvas.toDataUrl('image/jpeg');
+
+    // Strip the  data:image/jpeg;base64,  prefix
+    final base64Str = dataUrl.split(',').last;
+    if (base64Str.isEmpty) return null;
+
+    return base64Decode(base64Str);
   }
 
   Future<void> _capture() async {
-    final video = _video;
-    if (video == null || !_ready || _capturing) return;
+    if (!_ready || _capturing) return;
     setState(() => _capturing = true);
+
     try {
-      final canvas = html.CanvasElement(
-          width: video.videoWidth, height: video.videoHeight);
-      canvas.context2D.drawImage(video, 0, 0);
+      final bytes = await _captureFrame();
 
-      final blob = await canvas.toBlob('image/jpeg', 0.92);
-      if (blob == null) throw Exception('Capture failed');
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('No image data captured');
+      }
 
-      final reader = html.FileReader();
-      reader.readAsArrayBuffer(blob);
-      await reader.onLoad.first;
-      final bytes = Uint8List.fromList(
-          (reader.result as ByteBuffer).asUint8List());
+      final xFile = XFile.fromData(
+        bytes,
+        name: 'lego_scan_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        mimeType: 'image/jpeg',
+      );
 
-      final xFile = XFile.fromData(bytes,
-          name: 'capture.jpg', mimeType: 'image/jpeg');
       _stopStream();
       if (mounted) Navigator.of(context).pop(xFile);
     } catch (e) {
-      setState(() => _capturing = false);
+      if (mounted) {
+        setState(() => _capturing = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Capture failed: $e'),
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
   }
 
-  void _cancel() { _stopStream(); Navigator.of(context).pop(null); }
+  void _cancel() {
+    _stopStream();
+    if (mounted) Navigator.of(context).pop(null);
+  }
+
+  Future<void> _pickFromGallery() async {
+    _stopStream();
+    final img = await ImagePicker().pickImage(
+        source: ImageSource.gallery, imageQuality: 85);
+    if (mounted) Navigator.of(context).pop(img);
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       backgroundColor: Colors.black,
@@ -192,89 +249,135 @@ class _WebCameraDialogState extends State<_WebCameraDialog> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: SizedBox(
-          width: size.width.clamp(0.0, 640.0),
-          height: size.height * 0.75,
+          width:  size.width.clamp(0.0, 700.0),
+          height: size.height * 0.80,
           child: Column(children: [
-            // Top bar
-            Container(color: Colors.black87,
+
+            // ── Top bar ──────────────────────────────────────────────────
+            Container(
+              color: Colors.black,
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Row(children: [
-                IconButton(icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: _cancel),
-                Expanded(child: Text('Take Photo', textAlign: TextAlign.center,
-                    style: GoogleFonts.nunito(color: Colors.white,
-                        fontSize: 16, fontWeight: FontWeight.w700))),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: _cancel, tooltip: 'Cancel',
+                ),
+                Expanded(child: Text('Take Photo',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(color: Colors.white,
+                      fontSize: 16, fontWeight: FontWeight.w700))),
                 const SizedBox(width: 48),
-              ])),
-            // Preview
-            Expanded(child: _error != null ? _errorView()
-              : !_ready
-                  ? const Center(child: CircularProgressIndicator(color: _yellow))
-                  : HtmlElementView(viewType: _viewId)),
-            // Bottom bar
-            Container(color: Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              ]),
+            ),
+
+            // ── Camera preview ────────────────────────────────────────────
+            Expanded(
+              child: _error != null
+                  ? _errorView()
+                  : !_ready
+                      ? const Center(child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: _yellow),
+                            SizedBox(height: 12),
+                            Text('Starting camera…',
+                                style: TextStyle(color: Colors.white70)),
+                          ]))
+                      : HtmlElementView(viewType: _viewId),
+            ),
+
+            // ── Bottom bar ────────────────────────────────────────────────
+            Container(
+              color: Colors.black,
+              padding: const EdgeInsets.fromLTRB(32, 16, 32, 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _iconBtn(icon: Icons.photo_library_outlined,
-                    onTap: () async {
-                      _stopStream();
-                      final img = await ImagePicker().pickImage(
-                          source: ImageSource.gallery, imageQuality: 85);
-                      if (mounted) Navigator.of(context).pop(img);
-                    }),
-                  GestureDetector(onTap: (_ready && !_capturing) ? _capture : null,
+                  // Gallery
+                  _circleBtn(
+                    icon: Icons.photo_library_outlined,
+                    onTap: _pickFromGallery,
+                    tooltip: 'Pick from gallery',
+                  ),
+
+                  // Shutter
+                  GestureDetector(
+                    onTap: (_ready && !_capturing) ? _capture : null,
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 100),
-                      width: 68, height: 68,
-                      decoration: BoxDecoration(shape: BoxShape.circle,
-                        color: _capturing ? Colors.grey : _yellow,
-                        border: Border.all(color: Colors.white, width: 4)),
+                      duration: const Duration(milliseconds: 120),
+                      width: 72, height: 72,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _capturing ? Colors.grey.shade700 : _yellow,
+                        border: Border.all(color: Colors.white, width: 4),
+                        boxShadow: _ready && !_capturing ? [
+                          BoxShadow(color: _yellow.withOpacity(0.5),
+                              blurRadius: 12, spreadRadius: 2),
+                        ] : [],
+                      ),
                       child: _capturing
-                          ? const Padding(padding: EdgeInsets.all(18),
+                          ? const Padding(padding: EdgeInsets.all(20),
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.camera_alt, color: _dark, size: 30),
-                    )),
-                  const SizedBox(width: 50),
-                ])),
+                                  strokeWidth: 2.5, color: Colors.white))
+                          : const Icon(Icons.camera_alt, color: _dark, size: 32),
+                    ),
+                  ),
+
+                  // Spacer (balance)
+                  const SizedBox(width: 50, height: 50),
+                ],
+              ),
+            ),
           ]),
         ),
       ),
     );
   }
 
-  Widget _iconBtn({required IconData icon, VoidCallback? onTap}) =>
-      GestureDetector(onTap: onTap, child: Container(width: 50, height: 50,
-        decoration: BoxDecoration(shape: BoxShape.circle,
-          color: Colors.white.withOpacity(0.15),
-          border: Border.all(color: Colors.white.withOpacity(0.3))),
-        child: Icon(icon, color: Colors.white, size: 24)));
+  Widget _circleBtn({
+    required IconData icon,
+    required VoidCallback onTap,
+    String? tooltip,
+  }) =>
+      Tooltip(
+        message: tooltip ?? '',
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 50, height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withOpacity(0.15),
+              border: Border.all(color: Colors.white.withOpacity(0.35)),
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+        ),
+      );
 
-  Widget _errorView() => Center(child: Padding(padding: const EdgeInsets.all(24),
+  Widget _errorView() => Center(child: Padding(
+    padding: const EdgeInsets.all(24),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       const Icon(Icons.videocam_off, color: Colors.white54, size: 56),
       const SizedBox(height: 16),
-      Text(_error ?? 'Camera unavailable', textAlign: TextAlign.center,
+      Text(_error ?? 'Camera unavailable',
+          textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white70, fontSize: 14)),
       const SizedBox(height: 20),
       OutlinedButton.icon(
-        onPressed: () async {
-          _stopStream();
-          final img = await ImagePicker().pickImage(
-              source: ImageSource.gallery, imageQuality: 85);
-          if (mounted) Navigator.of(context).pop(img);
-        },
+        onPressed: _pickFromGallery,
         icon: const Icon(Icons.photo_library, color: Colors.white),
-        label: const Text('Upload from gallery',
+        label: const Text('Upload from gallery instead',
             style: TextStyle(color: Colors.white)),
         style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: Colors.white38))),
-    ])));
+            side: const BorderSide(color: Colors.white38)),
+      ),
+    ]),
+  ));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Native camera screen
+// Native camera screen (desktop/mobile native builds only)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _NativeCameraScreen extends StatefulWidget {
@@ -314,7 +417,8 @@ class _NativeCameraScreenState extends State<_NativeCameraScreen>
     final ctrl = _controller;
     if (ctrl == null || !ctrl.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
-      ctrl.dispose(); if (mounted) setState(() => _initialized = false);
+      ctrl.dispose();
+      if (mounted) setState(() => _initialized = false);
     } else if (state == AppLifecycleState.resumed) {
       _init(widget.cameras[_cameraIndex]);
     }
@@ -325,6 +429,7 @@ class _NativeCameraScreenState extends State<_NativeCameraScreen>
     if (old != null) { await old.dispose(); _controller = null; }
     if (!mounted) return;
     setState(() { _initialized = false; _error = null; });
+
     final ctrl = CameraController(cam, ResolutionPreset.high,
         enableAudio: false, imageFormatGroup: ImageFormatGroup.jpeg);
     try {
@@ -366,7 +471,8 @@ class _NativeCameraScreenState extends State<_NativeCameraScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Capture failed: ${e.description}'),
-          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
         setState(() => _capturing = false);
       }
     }
@@ -379,7 +485,9 @@ class _NativeCameraScreenState extends State<_NativeCameraScreen>
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
     body: SafeArea(child: Column(children: [
-      _topBar(), Expanded(child: _previewArea()), _bottomBar()])));
+      _topBar(), Expanded(child: _previewArea()), _bottomBar(),
+    ])),
+  );
 
   Widget _previewArea() {
     if (_error != null) return _errorView();
@@ -435,17 +543,20 @@ class _NativeCameraScreenState extends State<_NativeCameraScreen>
       decoration: BoxDecoration(shape: BoxShape.circle,
         color: Colors.white.withOpacity(e ? 0.15 : 0.05),
         border: Border.all(color: Colors.white.withOpacity(e ? 0.3 : 0.08))),
-      child: Icon(icon, color: Colors.white.withOpacity(e ? 1.0 : 0.25), size: 26)));
+      child: Icon(icon, color: Colors.white.withOpacity(e ? 1.0 : 0.25),
+          size: 26)));
   }
 
-  Widget _errorView() => Center(child: Padding(padding: const EdgeInsets.all(32),
+  Widget _errorView() => Center(child: Padding(
+    padding: const EdgeInsets.all(32),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       const Icon(Icons.videocam_off, color: Colors.white54, size: 56),
       const SizedBox(height: 16),
       Text(_error ?? 'Camera unavailable', textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white70, fontSize: 14)),
       const SizedBox(height: 24),
-      ElevatedButton.icon(onPressed: () => _init(widget.cameras[_cameraIndex]),
+      ElevatedButton.icon(
+        onPressed: () => _init(widget.cameras[_cameraIndex]),
         icon: const Icon(Icons.refresh), label: const Text('Retry')),
     ])));
 }
